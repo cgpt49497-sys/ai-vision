@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AI VISION — Smart Glass Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* =========================================================
+   AI VISION — design tokens
+   bg   #04080A   panel #0A1418 (72% + blur)
+   cyan #4CE7D2   violet #8C7CFF   amber #FFB020   red #FF4D5E
+   text #E7F3F1   muted #6C8985
+   display: 'Chakra Petch'   data: 'JetBrains Mono'
+   ========================================================= */
+
+:root{
+  --bg:#04080A;
+  --panel:rgba(9,17,20,0.74);
+  --panel-solid:#0A1418;
+  --line: rgba(76,231,210,0.18);
+  --cyan:#4CE7D2;
+  --cyan-dim:rgba(76,231,210,0.35);
+  --violet:#8C7CFF;
+  --amber:#FFB020;
+  --red:#FF4D5E;
+  --text:#E7F3F1;
+  --muted:#6C8985;
+  --radius:2px;
+}
+
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Chakra Petch', sans-serif;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;}
+
+/* ---------- ambient chrome ---------- */
+.scanlines{
+  position:fixed; inset:0; pointer-events:none; z-index:50;
+  background:repeating-linear-gradient(
+    to bottom, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px,
+    transparent 1px, transparent 3px);
+  mix-blend-mode:overlay;
+}
+.vignette{
+  position:fixed; inset:0; pointer-events:none; z-index:49;
+  background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+}
+
+/* ---------- layout ---------- */
+.stage{
+  display:grid;
+  grid-template-columns: 1fr min(360px, 32vw);
+  gap:1px;
+  height:calc(100vh - 56px - 34px);
+  height:calc(100dvh - 56px - 34px);
+}
+
+/* ---------- top bar ---------- */
+.topbar{
+  height:56px;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 18px;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg, rgba(76,231,210,0.05), transparent);
+}
+.brand{display:flex; align-items:center; gap:10px;}
+.brand-mark{
+  color:var(--cyan); font-size:20px; line-height:1;
+  text-shadow:0 0 12px var(--cyan-dim);
+  animation:spin 6s linear infinite;
+  display:inline-block;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.brand-text{display:flex; flex-direction:column; line-height:1.1;}
+.brand-title{font-weight:700; letter-spacing:0.12em; font-size:15px;}
+.brand-sub{font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.14em; color:var(--muted);}
+
+.mode-switch{display:flex; gap:2px; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;}
+.mode-btn{
+  background:transparent; border:none; color:var(--muted);
+  font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.1em;
+  padding:9px 12px; cursor:pointer; display:flex; align-items:center; gap:7px;
+  transition:color .2s, background-color .2s;
+}
+.mode-btn .mode-dot{width:6px; height:6px; border-radius:50%; background:var(--muted); transition:.2s;}
+.mode-btn:hover{color:var(--text);}
+.mode-btn.is-active{color:var(--cyan); background:rgba(76,231,210,0.08);}
+.mode-btn.is-active .mode-dot{background:var(--cyan); box-shadow:0 0 8px var(--cyan);}
+
+/* ---------- viewport ---------- */
+.viewport{
+  position:relative; background:#000; overflow:hidden;
+  border-right:1px solid var(--line);
+}
+#camera-feed{
+  position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  transform:scaleX(-1);
+  filter:contrast(1.05) saturate(1.05);
+}
+#overlay-canvas{
+  position:absolute; inset:0; width:100%; height:100%;
+}
+
+.hud-frame{position:absolute; inset:14px; pointer-events:none;}
+.corner{position:absolute; width:22px; height:22px; border:2px solid var(--cyan); opacity:0.8;}
+.corner.tl{top:0; left:0; border-right:none; border-bottom:none;}
+.corner.tr{top:0; right:0; border-left:none; border-bottom:none;}
+.corner.bl{bottom:0; left:0; border-right:none; border-top:none;}
+.corner.br{bottom:0; right:0; border-left:none; border-top:none;}
+.crosshair{
+  position:absolute; top:50%; left:50%; width:26px; height:26px;
+  transform:translate(-50%,-50%); opacity:0.35;
+}
+.crosshair::before,.crosshair::after{content:""; position:absolute; background:var(--cyan);}
+.crosshair::before{top:50%; left:0; width:100%; height:1px;}
+.crosshair::after{left:50%; top:0; width:1px; height:100%;}
+
+.viewport-caption{
+  position:absolute; left:22px; bottom:16px; z-index:5;
+  font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.14em; color:var(--cyan);
+  display:flex; align-items:center; gap:8px;
+}
+.rec-dot{width:6px; height:6px; border-radius:50%; background:var(--red); box-shadow:0 0 8px var(--red); animation:pulse 1.4s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.25;}}
+
+.viewport-overlay{
+  position:absolute; inset:0; z-index:6;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(2,5,6,0.86);
+  transition:opacity .3s;
+}
+.viewport-overlay.hidden{opacity:0; pointer-events:none;}
+.msg-box{text-align:center; max-width:320px; padding:0 20px;}
+.msg-title{font-weight:600; letter-spacing:0.1em; font-size:14px; color:var(--cyan); margin:0 0 8px;}
+.msg-body{font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--muted); margin:0 0 16px; line-height:1.6;}
+
+.btn{
+  font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.08em;
+  border:1px solid var(--cyan); background:transparent; color:var(--cyan);
+  padding:10px 18px; border-radius:var(--radius); cursor:pointer;
+  transition:background-color .2s, color .2s;
+}
+.btn:hover{background:rgba(76,231,210,0.12);}
+.btn-primary{background:var(--cyan); color:#04141180; color:#022; font-weight:600;}
+.btn-primary:hover{background:#6FF0DE;}
+
+.scan-control{position:absolute; left:0; right:0; bottom:26px; z-index:5; display:flex; justify-content:center;}
+.btn-scan{
+  display:flex; align-items:center; gap:10px;
+  padding:14px 28px; font-size:12px; font-weight:600;
+  border:1px solid var(--amber); color:var(--amber);
+  background:rgba(4,8,10,0.7); backdrop-filter:blur(6px);
+}
+.btn-scan:hover{background:rgba(255,176,32,0.14);}
+.btn-scan:active{transform:scale(0.98);}
+.scan-icon{width:9px; height:9px; border:1.5px solid var(--amber); border-radius:50%;}
+.btn-scan.is-scanning .scan-icon{background:var(--amber); animation:pulse .8s infinite;}
+
+/* ---------- side panel ---------- */
+.panel{
+  background:var(--panel-solid);
+  display:flex; flex-direction:column; gap:1px; overflow:hidden;
+}
+.panel-card{
+  padding:16px 18px;
+  border-bottom:1px solid var(--line);
+}
+.panel-card-grow{flex:1; display:flex; flex-direction:column; min-height:0;}
+.panel-title{
+  margin:0 0 12px; font-size:11px; font-weight:600; letter-spacing:0.16em;
+  color:var(--muted); display:flex; align-items:center; justify-content:space-between;
+}
+.results-count{
+  font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--cyan);
+  border:1px solid var(--line); padding:1px 7px; border-radius:20px;
+}
+
+.status-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px;}
+.status-row{display:flex; align-items:center; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:10.5px;}
+.status-label{color:var(--muted); letter-spacing:0.08em;}
+.status-value{letter-spacing:0.08em; font-weight:600; color:var(--muted); display:flex; align-items:center; gap:6px;}
+.status-value::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor;}
+.status-value.ok{color:var(--cyan); text-shadow:0 0 8px var(--cyan-dim);}
+.status-value.warn{color:var(--amber);}
+.status-value.err{color:var(--red);}
+.status-value.idle{color:var(--violet);}
+
+.results-list{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding-right:2px;}
+.results-empty{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); line-height:1.7; margin-top:6px;}
+
+.result-item{
+  border:1px solid var(--line); border-radius:var(--radius);
+  padding:10px 12px; background:rgba(76,231,210,0.03);
+  animation:fadeIn .25s ease;
+}
+@keyframes fadeIn{from{opacity:0; transform:translateY(3px);} to{opacity:1; transform:translateY(0);}}
+.result-item-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;}
+.result-name{font-weight:600; font-size:12.5px; letter-spacing:0.02em;}
+.result-conf{font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan);}
+.result-bar{height:2px; background:rgba(255,255,255,0.08); border-radius:2px; overflow:hidden; margin-bottom:6px;}
+.result-bar-fill{height:100%; background:var(--cyan); box-shadow:0 0 6px var(--cyan);}
+.result-explain{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); line-height:1.55;}
+.result-explain .explain-btn{color:var(--violet); cursor:pointer; text-decoration:underline; text-underline-offset:2px;}
+
+.result-item.text-block{white-space:pre-wrap; font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text); line-height:1.6;}
+
+/* ---------- footer ---------- */
+.footer{
+  height:34px; display:flex; align-items:center; justify-content:center; gap:10px;
+  font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.08em; color:var(--muted);
+  border-top:1px solid var(--line);
+}
+.footer-sep{opacity:.4;}
+.ai-hook{color:var(--violet);}
+
+/* ---------- bounding boxes drawn on canvas are code-driven; label chips below are DOM fallback not used ---------- */
+
+/* ---------- responsive ---------- */
+@media (max-width: 860px){
+  .stage{grid-template-columns:1fr;}
+  .stage{height:auto;}
+  body{overflow-y:auto; overflow-x:hidden; height:auto;}
+  .viewport{height:64vh;}
+  .panel{flex-direction:column;}
+  .results-list{max-height:38vh;}
+  .brand-sub{display:none;}
+  .mode-btn{padding:9px 9px; font-size:9px;}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .brand-mark{animation:none;}
+  .rec-dot{animation:none;}
+}
+</style>
+</head>
+<body>
+
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <div class="brand-text">
+        <span class="brand-title">AI VISION</span>
+        <span class="brand-sub">SMART GLASS PROTOTYPE // GEN‑0</span>
+      </div>
+    </div>
+
+    <div class="mode-switch" role="tablist" aria-label="Operating mode">
+      <button class="mode-btn is-active" data-mode="vision" role="tab" aria-selected="true">
+        <span class="mode-dot"></span>VISION MODE
+      </button>
+      <button class="mode-btn" data-mode="text" role="tab" aria-selected="false">
+        <span class="mode-dot"></span>TEXT MODE
+      </button>
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <section class="viewport" id="viewport">
+      <video id="camera-feed" playsinline autoplay muted></video>
+      <canvas id="overlay-canvas"></canvas>
+
+      <div class="hud-frame" aria-hidden="true">
+        <span class="corner tl"></span><span class="corner tr"></span>
+        <span class="corner bl"></span><span class="corner br"></span>
+        <div class="crosshair"></div>
+      </div>
+
+      <div class="viewport-overlay" id="camera-message">
+        <div class="msg-box">
+          <p class="msg-title" id="camera-message-title">INITIALIZING OPTICAL FEED</p>
+          <p class="msg-body" id="camera-message-body">Requesting camera access…</p>
+          <button class="btn btn-primary" id="camera-retry-btn" hidden>RETRY CAMERA ACCESS</button>
+        </div>
+      </div>
+
+      <div class="scan-control" id="scan-control" hidden>
+        <button class="btn btn-scan" id="scan-text-btn">
+          <span class="scan-icon"></span> SCAN TEXT
+        </button>
+      </div>
+
+      <div class="viewport-caption">
+        <span id="vp-caption-label">LIVE FEED</span>
+        <span class="rec-dot" id="rec-dot"></span>
+      </div>
+    </section>
+
+    <aside class="panel">
+
+      <section class="panel-card" id="status-card">
+        <h2 class="panel-title">SYSTEM STATUS</h2>
+        <ul class="status-list" id="status-list">
+          <li class="status-row" data-key="camera">
+            <span class="status-label">CAMERA</span>
+            <span class="status-value" id="status-camera">OFFLINE</span>
+          </li>
+          <li class="status-row" data-key="detection">
+            <span class="status-label">OBJECT DETECTION</span>
+            <span class="status-value" id="status-detection">STANDBY</span>
+          </li>
+          <li class="status-row" data-key="ocr">
+            <span class="status-label">OCR</span>
+            <span class="status-value" id="status-ocr">STANDBY</span>
+          </li>
+          <li class="status-row" data-key="aicore">
+            <span class="status-label">AI CORE</span>
+            <span class="status-value" id="status-aicore">STANDBY</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="panel-card panel-card-grow" id="results-card">
+        <h2 class="panel-title">
+          <span id="results-title">DETECTION RESULTS</span>
+          <span class="results-count" id="results-count">0</span>
+        </h2>
+        <div class="results-list" id="results-list">
+          <p class="results-empty" id="results-empty">No objects in frame yet. Point the camera at something.</p>
+        </div>
+      </section>
+
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span>Camera → Detection → <span class="ai-hook">AI Core (v2)</span> → Explanation</span>
+    <span class="footer-sep">/</span>
+    <span>Voice Assistant — planned</span>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.22.0/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+
+  <script>
+/**
+ * camera.js
+ * -----------------------------------------------------------------------
+ * Owns access to the physical camera. Everything here talks to the
+ * browser's MediaDevices API. When this project moves to Android
+ * (CameraX) or dedicated hardware, only this file needs to be replaced —
+ * the rest of the app talks to CameraModule's interface, not to
+ * getUserMedia directly.
+ * -----------------------------------------------------------------------
+ */
+
+class CameraModule {
+  /**
+   * @param {HTMLVideoElement} videoEl
+   */
+  constructor(videoEl) {
+    this.videoEl = videoEl;
+    this.stream = null;
+  }
+
+  /**
+   * Requests camera access and attaches the stream to the <video> element.
+   * Resolves once the video has usable dimensions.
+   * @returns {Promise<{width:number, height:number}>}
+   */
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new CameraError('UNSUPPORTED', 'This browser does not expose camera access.');
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        },
+        audio: false,
+      });
+    } catch (err) {
+      throw CameraModule._mapError(err);
+    }
+
+    this.stream = stream;
+    this.videoEl.srcObject = stream;
+
+    await new Promise((resolve, reject) => {
+      const onReady = () => {
+        this.videoEl.removeEventListener('loadedmetadata', onReady);
+        this.videoEl.play().catch(() => {}); // explicit play() is more reliable than autoplay alone on some mobile browsers
+        resolve();
+      };
+      this.videoEl.addEventListener('loadedmetadata', onReady);
+      setTimeout(() => reject(new CameraError('TIMEOUT', 'Camera feed did not start in time.')), 8000);
+    });
+
+    return {
+      width: this.videoEl.videoWidth,
+      height: this.videoEl.videoHeight,
+    };
+  }
+
+  stop() {
+    if (this.stream) {
+      this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null;
+    }
+  }
+
+  isActive() {
+    return !!this.stream && this.stream.active;
+  }
+
+  static _mapError(err) {
+    const name = err && err.name;
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return new CameraError('PERMISSION_DENIED', 'Camera permission was denied.');
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return new CameraError('NO_DEVICE', 'No camera device was found.');
+    }
+    if (name === 'NotReadableError') {
+      return new CameraError('IN_USE', 'The camera is already in use by another application.');
+    }
+    return new CameraError('UNKNOWN', (err && err.message) || 'Unknown camera error.');
+  }
+}
+
+class CameraError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'CameraError';
+    this.code = code;
+  }
+}
+/**
+ * objectDetection.js
+ * -----------------------------------------------------------------------
+ * Real, running object detection using TensorFlow.js + the pretrained
+ * COCO-SSD model (loaded from CDN in index.html). No hard-coded results:
+ * every box/label/confidence comes from the model's live output on the
+ * current video frame.
+ *
+ * This class is deliberately the ONLY place that knows about TF.js /
+ * coco-ssd. When a custom or on-device model is swapped in later
+ * (e.g. for the standalone glasses hardware), only this file changes —
+ * app.js just calls detect(videoEl) and expects the same shape back.
+ * -----------------------------------------------------------------------
+ */
+
+class ObjectDetector {
+  constructor({ minConfidence = 0.45 } = {}) {
+    this.model = null;
+    this.minConfidence = minConfidence;
+    this.ready = false;
+    this.backend = null;
+    this.lastInferenceMs = 0;
+  }
+
+  async load(onStatus) {
+    if (typeof cocoSsd === 'undefined') {
+      throw new Error('coco-ssd library failed to load (check network connection).');
+    }
+    onStatus && onStatus('LOADING');
+
+    // Force the fastest available backend. Without this, TF.js can silently
+    // fall back to the CPU backend on some mobile browsers, which is where
+    // most of the "very slow" feeling comes from.
+    try {
+      await tf.setBackend('webgl');
+    } catch (e) {
+      console.warn('WebGL backend unavailable, falling back to CPU.', e);
+    }
+    await tf.ready();
+    this.backend = tf.getBackend();
+
+    this.model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+
+    // Warm-up pass: the very first inference compiles GPU shaders and is
+    // always much slower than every inference after it. Running one dummy
+    // pass here (on a blank frame) means the user's first real detection
+    // isn't the slow one.
+    onStatus && onStatus('WARMING UP');
+    const warmupCanvas = document.createElement('canvas');
+    warmupCanvas.width = 300;
+    warmupCanvas.height = 300;
+    await this.model.detect(warmupCanvas);
+
+    this.ready = true;
+    onStatus && onStatus('READY');
+  }
+
+  /**
+   * Runs detection on a single video frame.
+   * @param {HTMLVideoElement} videoEl
+   * @returns {Promise<Array<{class:string, score:number, bbox:number[]}>>}
+   */
+  async detect(videoEl) {
+    if (!this.ready || !this.model) return [];
+    if (videoEl.readyState < 2) return [];
+    const t0 = performance.now();
+    const predictions = await this.model.detect(videoEl);
+    this.lastInferenceMs = Math.round(performance.now() - t0);
+    return predictions
+      .filter((p) => p.score >= this.minConfidence)
+      .sort((a, b) => b.score - a.score);
+  }
+}
+/**
+ * ocr.js
+ * -----------------------------------------------------------------------
+ * Real OCR using Tesseract.js against a snapshot of the current camera
+ * frame. Isolated the same way as ObjectDetector — app.js only calls
+ * recognize(videoEl) and never touches Tesseract directly.
+ * -----------------------------------------------------------------------
+ */
+
+class OCRModule {
+  constructor({ lang = 'eng' } = {}) {
+    this.lang = lang;
+    this.worker = null;
+    this.ready = false;
+  }
+
+  async load(onStatus) {
+    if (typeof Tesseract === 'undefined') {
+      throw new Error('Tesseract.js failed to load (check network connection).');
+    }
+    onStatus && onStatus('LOADING');
+    this.worker = await Tesseract.createWorker(this.lang);
+    this.ready = true;
+    onStatus && onStatus('READY');
+  }
+
+  /**
+   * Grabs the current video frame and runs OCR on it.
+   * @param {HTMLVideoElement} videoEl
+   * @returns {Promise<string>}
+   */
+  async recognize(videoEl) {
+    if (!this.ready || !this.worker) throw new Error('OCR engine is not ready yet.');
+    if (!videoEl.videoWidth) throw new Error('No camera frame available to scan.');
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoEl.videoWidth;
+    canvas.height = videoEl.videoHeight;
+    const ctx = canvas.getContext('2d');
+    // mirror to match what the user sees on screen
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+
+    const { data } = await this.worker.recognize(canvas);
+    return (data && data.text ? data.text.trim() : '');
+  }
+}
+/**
+ * aiCore.js
+ * -----------------------------------------------------------------------
+ * NOT wired to a generative model in this prototype — that's the next
+ * milestone. This file exists so the rest of the app can already call
+ * into "the AI" through a stable interface:
+ *
+ *   Camera → Object Detection → AI Core → Explanation   (implemented as a stub below)
+ *   Microphone → AI Core → Voice Response                (interface only, not started)
+ *
+ * When a real model is connected (e.g. the Anthropic API), only
+ * AICore.explainObject() needs a real network call — everything
+ * upstream (app.js, ObjectDetector) stays the same.
+ * -----------------------------------------------------------------------
+ */
+
+class AICore {
+  constructor() {
+    // Flip this on once a real model call replaces _localExplain().
+    this.connected = false;
+  }
+
+  /**
+   * Returns a short explanation of a detected object's label.
+   * Today: a small local lookup table (clearly not a generative model).
+   * Tomorrow: replace the body with a real API call, e.g.
+   *
+   *   const res = await fetch('https://api.anthropic.com/v1/messages', {
+   *     method: 'POST',
+   *     headers: { 'Content-Type': 'application/json' },
+   *     body: JSON.stringify({
+   *       model: 'claude-sonnet-4-6',
+   *       max_tokens: 200,
+   *       messages: [{ role: 'user', content: `Explain what a "${label}" is, in one sentence.` }],
+   *     }),
+   *   });
+   *
+   * @param {string} label
+   * @returns {Promise<string>}
+   */
+  async explainObject(label) {
+    await new Promise((r) => setTimeout(r, 250)); // simulates async model latency
+    return this._localExplain(label);
+  }
+
+  _localExplain(label) {
+    const key = (label || '').toLowerCase();
+    const table = {
+      person: 'A human being — the model tracks pose position, not identity.',
+      cell_phone: 'A handheld mobile device used for calls, messaging, and apps.',
+      'cell phone': 'A handheld mobile device used for calls, messaging, and apps.',
+      cup: 'A small container typically used for holding drinks.',
+      laptop: 'A portable computer with an attached keyboard and screen.',
+      book: 'A bound set of printed or blank pages.',
+      chair: 'A piece of furniture designed for one person to sit on.',
+      bottle: 'A narrow-necked container used for storing liquids.',
+      keyboard: 'An input device used to type text and commands.',
+      mouse: 'A handheld pointing device used to control a cursor.',
+      tv: 'A screen used to display broadcast or streamed video.',
+      clock: 'A device used to measure and display the current time.',
+      backpack: 'A bag worn on the back for carrying belongings.',
+    };
+    return table[key] || `No local description available yet for "${label}". This is where the connected AI model will generate one.`;
+  }
+
+  // ---------------------------------------------------------------------
+  // Voice assistant — interface reserved for a future milestone.
+  // Not implemented in this prototype; kept here so app.js and the UI
+  // can already be wired against a stable shape.
+  // ---------------------------------------------------------------------
+
+  /** @returns {Promise<string>} transcribed user speech */
+  async listen() {
+    throw new Error('Voice input is not implemented in this prototype yet.');
+  }
+
+  /** @param {string} text */
+  async speak(text) {
+    throw new Error('Voice output is not implemented in this prototype yet.');
+  }
+}
+/**
+ * app.js
+ * -----------------------------------------------------------------------
+ * Orchestrates the modules (camera / detection / OCR / AI core) and the
+ * HUD UI. Nothing in here talks to getUserMedia, TF.js, or Tesseract
+ * directly — it only calls the module interfaces, so each module can be
+ * swapped independently (browser → Android → standalone hardware) later.
+ * -----------------------------------------------------------------------
+ */
+
+(function () {
+  'use strict';
+
+  // ---- DOM ----------------------------------------------------------
+  const videoEl = document.getElementById('camera-feed');
+  const canvasEl = document.getElementById('overlay-canvas');
+  const ctx = canvasEl.getContext('2d');
+
+  const cameraMessage = document.getElementById('camera-message');
+  const cameraMessageTitle = document.getElementById('camera-message-title');
+  const cameraMessageBody = document.getElementById('camera-message-body');
+  const cameraRetryBtn = document.getElementById('camera-retry-btn');
+
+  const modeButtons = Array.from(document.querySelectorAll('.mode-btn'));
+  const scanControl = document.getElementById('scan-control');
+  const scanTextBtn = document.getElementById('scan-text-btn');
+
+  const statusEls = {
+    camera: document.getElementById('status-camera'),
+    detection: document.getElementById('status-detection'),
+    ocr: document.getElementById('status-ocr'),
+    aicore: document.getElementById('status-aicore'),
+  };
+
+  const resultsList = document.getElementById('results-list');
+  const resultsEmpty = document.getElementById('results-empty');
+  const resultsCount = document.getElementById('results-count');
+  const resultsTitle = document.getElementById('results-title');
+  const vpCaptionLabel = document.getElementById('vp-caption-label');
+  const recDot = document.getElementById('rec-dot');
+
+  // ---- modules --------------------------------------------------------
+  const camera = new CameraModule(videoEl);
+  const detector = new ObjectDetector({ minConfidence: 0.45 });
+  const ocr = new OCRModule({ lang: 'eng' });
+  const aiCore = new AICore();
+
+  // ---- state ----------------------------------------------------------
+  let mode = 'vision'; // 'vision' | 'text'
+  let detectionLoopId = null;
+  let lastDetections = [];
+  let ocrLoaded = false;
+  let scanning = false;
+
+  // =====================================================================
+  // status panel
+  // =====================================================================
+  function setStatus(key, text, level) {
+    const el = statusEls[key];
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('ok', 'warn', 'err', 'idle');
+    if (level) el.classList.add(level);
+  }
+
+  // =====================================================================
+  // camera lifecycle
+  // =====================================================================
+  async function initCamera() {
+    cameraMessage.classList.remove('hidden');
+    cameraMessageTitle.textContent = 'INITIALIZING OPTICAL FEED';
+    cameraMessageBody.textContent = 'Requesting camera access…';
+    cameraRetryBtn.hidden = true;
+    setStatus('camera', 'CONNECTING', 'warn');
+
+    try {
+      await camera.start();
+      cameraMessage.classList.add('hidden');
+      setStatus('camera', 'ONLINE', 'ok');
+      recDot.style.display = '';
+      resizeCanvas();
+      await initEngines();
+    } catch (err) {
+      handleCameraError(err);
+    }
+  }
+
+  function handleCameraError(err) {
+    setStatus('camera', 'OFFLINE', 'err');
+    setStatus('detection', 'STANDBY', 'idle');
+    setStatus('ocr', 'STANDBY', 'idle');
+    cameraMessage.classList.remove('hidden');
+    cameraRetryBtn.hidden = false;
+    recDot.style.display = 'none';
+
+    const code = err && err.code;
+    if (code === 'PERMISSION_DENIED') {
+      cameraMessageTitle.textContent = 'CAMERA ACCESS DENIED';
+      cameraMessageBody.textContent = 'This prototype needs camera permission to see the environment. Allow camera access in your browser settings, then retry.';
+    } else if (code === 'NO_DEVICE') {
+      cameraMessageTitle.textContent = 'NO CAMERA FOUND';
+      cameraMessageBody.textContent = 'No camera device was detected on this system.';
+    } else if (code === 'IN_USE') {
+      cameraMessageTitle.textContent = 'CAMERA UNAVAILABLE';
+      cameraMessageBody.textContent = 'The camera appears to be in use by another application.';
+    } else if (code === 'UNSUPPORTED') {
+      cameraMessageTitle.textContent = 'UNSUPPORTED BROWSER';
+      cameraMessageBody.textContent = 'This browser does not support camera access. Try a recent Chrome, Safari, or Edge.';
+    } else {
+      cameraMessageTitle.textContent = 'CAMERA ERROR';
+      cameraMessageBody.textContent = (err && err.message) || 'An unknown camera error occurred.';
+    }
+  }
+
+  cameraRetryBtn.addEventListener('click', initCamera);
+
+  window.addEventListener('resize', resizeCanvas);
+  function resizeCanvas() {
+    const rect = videoEl.getBoundingClientRect();
+    canvasEl.width = rect.width;
+    canvasEl.height = rect.height;
+  }
+
+  // =====================================================================
+  // engine init (object detector + ocr load lazily / in parallel)
+  // =====================================================================
+  async function initEngines() {
+    setStatus('detection', 'LOADING MODEL', 'warn');
+    try {
+      await detector.load((s) => {
+        if (s === 'WARMING UP') setStatus('detection', 'WARMING UP', 'warn');
+        if (s === 'READY') setStatus('detection', mode === 'vision' ? 'ACTIVE' : 'PAUSED', mode === 'vision' ? 'ok' : 'idle');
+      });
+      if (mode === 'vision') startDetectionLoop();
+    } catch (err) {
+      setStatus('detection', 'UNAVAILABLE', 'err');
+      console.error(err);
+    }
+
+    setStatus('ocr', 'READY', 'idle'); // engine loads lazily on first scan
+  }
+
+  async function ensureOcrLoaded() {
+    if (ocrLoaded) return;
+    setStatus('ocr', 'LOADING MODEL', 'warn');
+    await ocr.load(() => {});
+    ocrLoaded = true;
+    setStatus('ocr', 'READY', 'idle');
+  }
+
+  // =====================================================================
+  // detection loop (vision mode)
+  // =====================================================================
+  function startDetectionLoop() {
+    if (detectionLoopId) return;
+    setStatus('detection', 'ACTIVE', 'ok');
+    const tick = async () => {
+      if (mode !== 'vision' || !camera.isActive()) {
+        detectionLoopId = null;
+        return;
+      }
+      try {
+        const preds = await detector.detect(videoEl);
+        lastDetections = preds;
+        drawDetections(preds);
+        renderResultList(preds);
+        setStatus('detection', `ACTIVE · ${detector.lastInferenceMs}ms`, 'ok');
+      } catch (err) {
+        console.error('detection error', err);
+      }
+      detectionLoopId = requestAnimationFrame(tick);
+    };
+    detectionLoopId = requestAnimationFrame(tick);
+  }
+
+  function stopDetectionLoop() {
+    if (detectionLoopId) {
+      cancelAnimationFrame(detectionLoopId);
+      detectionLoopId = null;
+    }
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  }
+
+  function drawDetections(preds) {
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    if (!videoEl.videoWidth) return;
+
+    const scaleX = canvasEl.width / videoEl.videoWidth;
+    const scaleY = canvasEl.height / videoEl.videoHeight;
+
+    ctx.font = '700 13px "JetBrains Mono", monospace';
+    ctx.textBaseline = 'bottom';
+
+    preds.forEach((p) => {
+      const [x, y, w, h] = p.bbox;
+      // mirror horizontally to match the mirrored video element
+      const boxX = canvasEl.width - (x + w) * scaleX;
+      const boxY = y * scaleY;
+      const boxW = w * scaleX;
+      const boxH = h * scaleY;
+
+      // solid, clearly visible box (this is the primary cue — corner ticks
+      // are just a decorative accent on top of it, not the only marker)
+      ctx.fillStyle = 'rgba(76,231,210,0.10)';
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#4CE7D2';
+      ctx.shadowColor = 'rgba(76,231,210,0.8)';
+      ctx.shadowBlur = 6;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+      ctx.shadowBlur = 0;
+
+      // corner accents
+      const tick = 12;
+      ctx.lineWidth = 4;
+      [[boxX, boxY, 1, 1], [boxX + boxW, boxY, -1, 1], [boxX, boxY + boxH, 1, -1], [boxX + boxW, boxY + boxH, -1, -1]]
+        .forEach(([cx, cy, dx, dy]) => {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy + tick * dy);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + tick * dx, cy);
+          ctx.stroke();
+        });
+
+      const label = `${p.class} — ${Math.round(p.score * 100)}%`;
+      const labelW = ctx.measureText(label).width + 14;
+      const labelY = Math.max(22, boxY);
+      ctx.fillStyle = '#4CE7D2';
+      ctx.fillRect(boxX, labelY - 22, labelW, 22);
+      ctx.fillStyle = '#032422';
+      ctx.fillText(label, boxX + 7, labelY - 5);
+    });
+  }
+
+  function renderResultList(preds) {
+    if (mode !== 'vision') return;
+    resultsCount.textContent = String(preds.length);
+    if (!preds.length) {
+      resultsList.innerHTML = '';
+      resultsList.appendChild(resultsEmpty);
+      return;
+    }
+    resultsList.innerHTML = '';
+    preds.forEach((p) => {
+      const item = document.createElement('div');
+      item.className = 'result-item';
+      const pct = Math.round(p.score * 100);
+      item.innerHTML = `
+        <div class="result-item-head">
+          <span class="result-name">${escapeHtml(p.class)}</span>
+          <span class="result-conf">${pct}%</span>
+        </div>
+        <div class="result-bar"><div class="result-bar-fill" style="width:${pct}%"></div></div>
+        <div class="result-explain"><span class="explain-btn">explain this object</span></div>
+      `;
+      const explainBtn = item.querySelector('.explain-btn');
+      explainBtn.addEventListener('click', async () => {
+        const explainEl = item.querySelector('.result-explain');
+        explainEl.textContent = 'Consulting AI core…';
+        setStatus('aicore', 'ACTIVE', 'ok');
+        try {
+          const text = await aiCore.explainObject(p.class);
+          explainEl.textContent = text;
+        } catch (err) {
+          explainEl.textContent = 'AI core is not available yet.';
+        } finally {
+          setStatus('aicore', 'STANDBY', 'idle');
+        }
+      });
+      resultsList.appendChild(item);
+    });
+  }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // =====================================================================
+  // mode switching
+  // =====================================================================
+  modeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  });
+
+  function setMode(next) {
+    if (mode === next) return;
+    mode = next;
+
+    modeButtons.forEach((b) => {
+      const active = b.dataset.mode === mode;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-selected', String(active));
+    });
+
+    if (mode === 'vision') {
+      vpCaptionLabel.textContent = 'LIVE FEED';
+      resultsTitle.textContent = 'DETECTION RESULTS';
+      scanControl.hidden = true;
+      resultsEmpty.textContent = 'No objects in frame yet. Point the camera at something.';
+      if (camera.isActive() && detector.ready) startDetectionLoop();
+      setStatus('ocr', ocrLoaded ? 'READY' : 'STANDBY', 'idle');
+    } else {
+      vpCaptionLabel.textContent = 'TEXT SCAN';
+      resultsTitle.textContent = 'OCR OUTPUT';
+      scanControl.hidden = false;
+      resultsList.innerHTML = '';
+      resultsEmpty.textContent = 'Point the camera at text, then press Scan Text.';
+      resultsList.appendChild(resultsEmpty);
+      resultsCount.textContent = '0';
+      stopDetectionLoop();
+      setStatus('detection', detector.ready ? 'PAUSED' : 'STANDBY', 'idle');
+      ensureOcrLoaded().catch((err) => {
+        setStatus('ocr', 'UNAVAILABLE', 'err');
+        console.error(err);
+      });
+    }
+  }
+
+  // =====================================================================
+  // OCR scan action
+  // =====================================================================
+  scanTextBtn.addEventListener('click', async () => {
+    if (scanning) return;
+    if (!camera.isActive()) return;
+
+    scanning = true;
+    scanTextBtn.classList.add('is-scanning');
+    scanTextBtn.disabled = true;
+    setStatus('ocr', 'SCANNING', 'warn');
+
+    try {
+      await ensureOcrLoaded();
+      const text = await ocr.recognize(videoEl);
+      showOcrResult(text);
+      setStatus('ocr', 'READY', 'idle');
+    } catch (err) {
+      showOcrResult(null, err.message || 'OCR failed.');
+      setStatus('ocr', 'ERROR', 'err');
+    } finally {
+      scanning = false;
+      scanTextBtn.classList.remove('is-scanning');
+      scanTextBtn.disabled = false;
+    }
+  });
+
+  function showOcrResult(text, errorMessage) {
+    resultsList.innerHTML = '';
+    const item = document.createElement('div');
+    item.className = 'result-item text-block';
+    if (errorMessage) {
+      item.style.color = 'var(--red)';
+      item.textContent = `SCAN FAILED — ${errorMessage}`;
+    } else if (!text) {
+      item.textContent = 'No text detected in frame. Try moving closer or improving lighting.';
+    } else {
+      item.textContent = text;
+    }
+    resultsList.appendChild(item);
+    resultsCount.textContent = text ? '1' : '0';
+  }
+
+  // =====================================================================
+  // boot
+  // =====================================================================
+  initCamera();
+})();
+  </script>
+</body>
+</html>
