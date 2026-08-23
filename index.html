@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>IRIS — AI Vision</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* =========================================================
+   IRIS — design tokens
+   Full-screen camera, floating glass panels, minimal chrome.
+   bg #000   glass rgba(14,16,20,.55)+blur   accent cyan #4CE7D2
+   amber #FFB020 (vehicles)   violet #8C7CFF (everything else / AI)
+   text #EAF5F3   muted #86A19D
+   display: 'Chakra Petch'   data: 'JetBrains Mono'
+   ========================================================= */
+
+:root{
+  --cyan:#4CE7D2;
+  --amber:#FFB020;
+  --violet:#8C7CFF;
+  --red:#FF5A6A;
+  --text:#EAF5F3;
+  --muted:#8FA6A2;
+  --glass:rgba(14,17,20,0.55);
+  --glass-solid:#101317;
+  --line:rgba(255,255,255,0.10);
+  --radius:20px;
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%; margin:0; overscroll-behavior:none;}
+body{
+  background:#000;
+  color:var(--text);
+  font-family:'Chakra Petch', sans-serif;
+  overflow:hidden;
+}
+button{font-family:inherit;}
+.mono{font-family:'JetBrains Mono',monospace;}
+
+/* ---------- full-screen camera layer ---------- */
+#camera-feed{
+  position:fixed; inset:0; width:100%; height:100%; object-fit:cover;
+  filter:contrast(1.05) saturate(1.05);
+  z-index:1;
+}
+#overlay-canvas{ position:fixed; inset:0; width:100%; height:100%; z-index:2; }
+
+/* ---------- top floating bar ---------- */
+.topbar{
+  position:fixed; top:0; left:0; right:0; z-index:20;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:max(14px, env(safe-area-inset-top)) 16px 0;
+}
+.logo{
+  display:flex; align-items:center; gap:7px;
+  font-weight:700; letter-spacing:0.06em; font-size:16px;
+  padding:9px 14px; border-radius:30px;
+  background:var(--glass); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--line);
+}
+.logo .dot{width:7px; height:7px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan);}
+.logo .ver{
+  font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); font-weight:400;
+  margin-left:2px;
+}
+
+.mode-switch{
+  display:flex; gap:2px; padding:4px;
+  background:var(--glass); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--line); border-radius:30px;
+}
+.mode-btn{
+  background:transparent; border:none; color:var(--muted);
+  font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.06em; font-weight:600;
+  padding:8px 14px; border-radius:24px; cursor:pointer; transition:.2s;
+}
+.mode-btn.is-active{color:#04141A; background:var(--cyan);}
+
+/* ---------- camera message (full-screen state) ---------- */
+.camera-message{
+  position:fixed; inset:0; z-index:15;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.82); backdrop-filter:blur(6px);
+  transition:opacity .3s;
+}
+.camera-message.hidden{opacity:0; pointer-events:none;}
+.msg-box{text-align:center; max-width:320px; padding:0 24px;}
+.msg-title{font-weight:700; letter-spacing:0.06em; font-size:16px; color:var(--cyan); margin:0 0 10px;}
+.msg-body{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--muted); margin:0 0 20px; line-height:1.7;}
+
+.btn{
+  font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.05em; font-weight:600;
+  border:none; border-radius:30px; padding:12px 22px; cursor:pointer; transition:.2s;
+}
+.btn-primary{background:var(--cyan); color:#04141A;}
+.btn-primary:active{transform:scale(0.97);}
+
+/* ---------- status dots (compact, floating under topbar) ---------- */
+.status-strip{
+  position:fixed; top:64px; left:16px; z-index:20;
+  display:flex; flex-direction:column; gap:6px;
+  padding:8px 12px; border-radius:16px;
+  background:var(--glass); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--line);
+}
+.status-row{display:flex; align-items:center; gap:7px; font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); white-space:nowrap;}
+.status-row .dot{width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0;}
+.status-row.ok .dot{background:var(--cyan); box-shadow:0 0 6px var(--cyan);}
+.status-row.warn .dot{background:var(--amber);}
+.status-row.err .dot{background:var(--red);}
+.status-row.idle .dot{background:var(--violet);}
+.status-row .val{color:var(--text);}
+
+/* ---------- bottom glass sheet ---------- */
+.sheet{
+  position:fixed; left:0; right:0; bottom:0; z-index:20;
+  max-height:52vh; overflow-y:auto;
+  background:var(--glass); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+  border-top:1px solid var(--line);
+  border-radius:24px 24px 0 0;
+  padding:10px 16px max(16px, env(safe-area-inset-bottom));
+}
+.sheet-handle{width:36px; height:4px; border-radius:4px; background:var(--line); margin:2px auto 12px;}
+
+.sheet-section{margin-bottom:14px;}
+.sheet-section:last-child{margin-bottom:0;}
+.sheet-title{
+  font-size:10px; font-weight:700; letter-spacing:0.12em; color:var(--muted);
+  display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;
+}
+.sheet-count{
+  font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--cyan);
+  border:1px solid var(--line); padding:1px 7px; border-radius:20px;
+}
+
+.tag-row{display:flex; flex-wrap:wrap; gap:6px;}
+.tag-chip{
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  border:1px solid var(--line); border-radius:20px; padding:4px 10px;
+  background:rgba(140,124,255,0.08); color:var(--text);
+}
+.tag-chip em{color:var(--violet); font-style:normal; margin-left:4px;}
+.tag-empty{font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);}
+
+.result-item{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 4px; border-bottom:1px solid var(--line);
+}
+.result-item:last-child{border-bottom:none;}
+.result-swatch{width:8px; height:8px; border-radius:50%; flex-shrink:0;}
+.result-name{font-size:12.5px; font-weight:600; flex:1;}
+.result-conf{font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted);}
+.explain-btn{
+  font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--violet);
+  border:1px solid rgba(140,124,255,0.35); border-radius:16px; padding:4px 9px; cursor:pointer; background:none;
+}
+.result-explain-text{
+  font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); line-height:1.6;
+  padding:0 0 8px; margin-top:-4px;
+}
+
+.btn-ask{
+  width:100%; background:rgba(140,124,255,0.10); color:var(--violet);
+  border:1px solid rgba(140,124,255,0.35); border-radius:16px; padding:11px; font-size:10.5px; letter-spacing:0.05em; font-weight:700;
+}
+.btn-ask:disabled{opacity:0.5;}
+.ask-response{margin-top:8px; font-family:'JetBrains Mono',monospace; font-size:11px; line-height:1.6; white-space:pre-wrap;}
+.ask-response:empty{display:none;}
+.ask-response.is-error{color:var(--red);}
+
+.ocr-output{
+  font-family:'JetBrains Mono',monospace; font-size:12px; line-height:1.7; white-space:pre-wrap;
+  max-height:30vh; overflow-y:auto;
+}
+
+/* ---------- scan-text floating action button ---------- */
+.scan-fab{
+  position:fixed; left:50%; bottom:calc(52vh + 18px); transform:translateX(-50%); z-index:21;
+  display:flex; align-items:center; gap:9px;
+  background:var(--amber); color:#241800; border:none;
+  padding:14px 26px; border-radius:30px; font-size:12px; font-weight:700; letter-spacing:0.05em;
+  box-shadow:0 6px 24px rgba(255,176,32,0.35);
+}
+.scan-fab .dot{width:8px; height:8px; border-radius:50%; background:#241800;}
+.scan-fab.is-scanning .dot{animation:pulse .8s infinite;}
+@keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.3;}}
+
+/* ---------- rec indicator ---------- */
+.rec{
+  position:fixed; top:14px; right:16px; z-index:20;
+  width:9px; height:9px; border-radius:50%; background:var(--red);
+  box-shadow:0 0 8px var(--red); animation:pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce){ .rec, .scan-fab .dot{animation:none;} }
+</style>
+</head>
+<body>
+
+  <video id="camera-feed" playsinline autoplay muted></video>
+  <canvas id="overlay-canvas"></canvas>
+
+  <header class="topbar">
+    <div class="logo"><span class="dot"></span>IRIS<span class="ver">v10</span></div>
+    <div class="mode-switch" role="tablist" aria-label="Operating mode">
+      <button class="mode-btn is-active" data-mode="vision" role="tab" aria-selected="true">VISION</button>
+      <button class="mode-btn" data-mode="text" role="tab" aria-selected="false">TEXT</button>
+    </div>
+  </header>
+
+  <div class="status-strip" id="status-strip">
+    <div class="status-row" data-key="camera"><span class="dot"></span>CAM <span class="val" id="status-camera">OFF</span></div>
+    <div class="status-row" data-key="detection"><span class="dot"></span>DET <span class="val" id="status-detection">STANDBY</span></div>
+    <div class="status-row" data-key="ocr"><span class="dot"></span>OCR <span class="val" id="status-ocr">STANDBY</span></div>
+    <div class="status-row" data-key="aicore"><span class="dot"></span>AI <span class="val" id="status-aicore">STANDBY</span></div>
+  </div>
+
+  <div class="camera-message" id="camera-message">
+    <div class="msg-box">
+      <p class="msg-title" id="camera-message-title">STARTING CAMERA</p>
+      <p class="msg-body" id="camera-message-body">Requesting camera access…</p>
+      <button class="btn btn-primary" id="camera-retry-btn" hidden>RETRY</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle"></div>
+
+    <div class="sheet-section" id="scan-section" style="display:none;">
+      <div class="sheet-title">TEXT SCAN</div>
+      <button class="btn-ask" id="scan-text-btn"><span class="dot"></span>SCAN TEXT</button>
+    </div>
+
+    <div class="sheet-section" id="scene-tags-section">
+      <div class="sheet-title">SCENE TAGS <span class="mono" style="font-weight:400; color:var(--muted); font-size:9px;">wider vocabulary</span></div>
+      <div class="tag-row" id="scene-tags-list"><span class="tag-empty">Loading classifier…</span></div>
+    </div>
+
+    <div class="sheet-section" id="environment-section">
+      <div class="sheet-title">ENVIRONMENT <span class="mono" style="font-weight:400; color:var(--muted); font-size:9px;">buildings, trees, sky, road</span></div>
+      <div class="tag-row" id="environment-list"><span class="tag-empty">Loading segmentation…</span></div>
+    </div>
+
+    <div class="sheet-section" id="ask-ai-section">
+      <div class="sheet-title">ASK AI</div>
+      <button class="btn-ask" id="ask-ai-btn">ASK AI ABOUT THIS SCENE</button>
+      <div class="ask-response" id="ask-ai-response"></div>
+    </div>
+
+    <div class="sheet-section" id="results-section">
+      <div class="sheet-title"><span id="results-title">DETECTED OBJECTS</span><span class="sheet-count" id="results-count">0</span></div>
+      <div id="results-list">
+        <p class="tag-empty" id="results-empty">No objects in frame yet — point the camera at something.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.22.0/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.1/dist/deeplab.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+
+  <script>
+/**
+ * camera.js
+ * -----------------------------------------------------------------------
+ * Owns access to the physical camera. Everything here talks to the
+ * browser's MediaDevices API. When this project moves to Android
+ * (CameraX) or dedicated hardware, only this file needs to be replaced —
+ * the rest of the app talks to CameraModule's interface, not to
+ * getUserMedia directly.
+ * -----------------------------------------------------------------------
+ */
+
+class CameraModule {
+  /**
+   * @param {HTMLVideoElement} videoEl
+   */
+  constructor(videoEl) {
+    this.videoEl = videoEl;
+    this.stream = null;
+  }
+
+  /**
+   * Requests camera access and attaches the stream to the <video> element.
+   * Resolves once the video has usable dimensions.
+   * @returns {Promise<{width:number, height:number}>}
+   */
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new CameraError('UNSUPPORTED', 'This browser does not expose camera access.');
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+    } catch (err) {
+      throw CameraModule._mapError(err);
+    }
+
+    this.stream = stream;
+    this.videoEl.srcObject = stream;
+
+    await new Promise((resolve, reject) => {
+      const onReady = () => {
+        this.videoEl.removeEventListener('loadedmetadata', onReady);
+        this.videoEl.play().catch(() => {}); // explicit play() is more reliable than autoplay alone on some mobile browsers
+        resolve();
+      };
+      this.videoEl.addEventListener('loadedmetadata', onReady);
+      setTimeout(() => reject(new CameraError('TIMEOUT', 'Camera feed did not start in time.')), 8000);
+    });
+
+    return {
+      width: this.videoEl.videoWidth,
+      height: this.videoEl.videoHeight,
+    };
+  }
+
+  stop() {
+    if (this.stream) {
+      this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null;
+    }
+  }
+
+  isActive() {
+    return !!this.stream && this.stream.active;
+  }
+
+  static _mapError(err) {
+    const name = err && err.name;
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return new CameraError('PERMISSION_DENIED', 'Camera permission was denied.');
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return new CameraError('NO_DEVICE', 'No camera device was found.');
+    }
+    if (name === 'NotReadableError') {
+      return new CameraError('IN_USE', 'The camera is already in use by another application.');
+    }
+    return new CameraError('UNKNOWN', (err && err.message) || 'Unknown camera error.');
+  }
+}
+
+class CameraError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'CameraError';
+    this.code = code;
+  }
+}
+/**
+ * objectDetection.js
+ * -----------------------------------------------------------------------
+ * Real, running object detection using TensorFlow.js + the pretrained
+ * COCO-SSD model (loaded from CDN in index.html). No hard-coded results:
+ * every box/label/confidence comes from the model's live output on the
+ * current video frame.
+ *
+ * This class is deliberately the ONLY place that knows about TF.js /
+ * coco-ssd. When a custom or on-device model is swapped in later
+ * (e.g. for the standalone glasses hardware), only this file changes —
+ * app.js just calls detect(videoEl) and expects the same shape back.
+ * -----------------------------------------------------------------------
+ */
+
+class ObjectDetector {
+  constructor({ minConfidence = 0.45 } = {}) {
+    this.model = null;
+    this.minConfidence = minConfidence;
+    this.ready = false;
+    this.backend = null;
+    this.lastInferenceMs = 0;
+  }
+
+  async load(onStatus) {
+    if (typeof cocoSsd === 'undefined') {
+      throw new Error('coco-ssd library failed to load (check network connection).');
+    }
+    onStatus && onStatus('LOADING');
+
+    // Force the fastest available backend. Without this, TF.js can silently
+    // fall back to the CPU backend on some mobile browsers, which is where
+    // most of the "very slow" feeling comes from.
+    try {
+      await tf.setBackend('webgl');
+    } catch (e) {
+      console.warn('WebGL backend unavailable, falling back to CPU.', e);
+    }
+    await tf.ready();
+    this.backend = tf.getBackend();
+
+    this.model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+
+    // Warm-up pass: the very first inference compiles GPU shaders and is
+    // always much slower than every inference after it. Running one dummy
+    // pass here (on a blank frame) means the user's first real detection
+    // isn't the slow one.
+    onStatus && onStatus('WARMING UP');
+    const warmupCanvas = document.createElement('canvas');
+    warmupCanvas.width = 300;
+    warmupCanvas.height = 300;
+    await this.model.detect(warmupCanvas);
+
+    this.ready = true;
+    onStatus && onStatus('READY');
+  }
+
+  /**
+   * Runs detection on a single video frame.
+   * @param {HTMLVideoElement} videoEl
+   * @returns {Promise<Array<{class:string, score:number, bbox:number[]}>>}
+   */
+  async detect(videoEl) {
+    if (!this.ready || !this.model) return [];
+    if (videoEl.readyState < 2) return [];
+    const t0 = performance.now();
+    const predictions = await this.model.detect(videoEl);
+    this.lastInferenceMs = Math.round(performance.now() - t0);
+    return predictions
+      .filter((p) => p.score >= this.minConfidence)
+      .sort((a, b) => b.score - a.score);
+  }
+}
+/**
+ * classifier.js
+ * -----------------------------------------------------------------------
+ * ObjectDetector (coco-ssd) can only box and label 80 fixed categories —
+ * that's a hard limit of every lightweight real-time detector available
+ * for the browser. To recognize a much wider vocabulary, this module runs
+ * MobileNet, a real image classifier trained on the 1000-category
+ * ImageNet dataset, on the current frame. It doesn't draw boxes (it
+ * classifies the whole frame, not individual regions) — it answers
+ * "what does this look like overall", with a much bigger vocabulary
+ * (~1000 ImageNet classes vs coco-ssd's 80), as a second, complementary
+ * signal shown next to the boxed detections.
+ *
+ * Runs on its own slower timer (see app.js) — classification is heavier
+ * than detection, so tying it to the same per-frame loop would make
+ * everything feel sluggish.
+ * -----------------------------------------------------------------------
+ */
+
+class SceneClassifier {
+  constructor({ topK = 3, minConfidence = 0.15 } = {}) {
+    this.model = null;
+    this.ready = false;
+    this.topK = topK;
+    this.minConfidence = minConfidence;
+  }
+
+  async load() {
+    if (typeof mobilenet === 'undefined') {
+      throw new Error('MobileNet library failed to load (check network connection).');
+    }
+    this.model = await mobilenet.load({ version: 2, alpha: 0.75 });
+    this.ready = true;
+  }
+
+  /**
+   * @param {HTMLVideoElement} videoEl
+   * @returns {Promise<Array<{className:string, probability:number}>>}
+   */
+  async classify(videoEl) {
+    if (!this.ready || !this.model) return [];
+    if (videoEl.readyState < 2) return [];
+    const results = await this.model.classify(videoEl, this.topK);
+    return results.filter((r) => r.probability >= this.minConfidence);
+  }
+}
+/**
+ * pose.js
+ * -----------------------------------------------------------------------
+ * Real body-part detection using MoveNet (Google's pose model). Unlike
+ * coco-ssd (which only says "person"), this returns 17 named keypoints —
+ * nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles —
+ * with per-point confidence. MoveNet Lightning is specifically built for
+ * speed, so it runs on the same fast per-frame loop as object detection
+ * without becoming the bottleneck.
+ * -----------------------------------------------------------------------
+ */
+
+class PoseDetector {
+  constructor({ minConfidence = 0.35 } = {}) {
+    this.model = null;
+    this.ready = false;
+    this.minConfidence = minConfidence;
+  }
+
+  async load() {
+    if (typeof poseDetection === 'undefined') {
+      throw new Error('pose-detection library failed to load (check network connection).');
+    }
+    this.model = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+    );
+    this.ready = true;
+  }
+
+  /**
+   * @param {HTMLVideoElement} videoEl
+   * @returns {Promise<Array<{name:string, x:number, y:number, score:number}>>}
+   */
+  async detect(videoEl) {
+    if (!this.ready || videoEl.readyState < 2) return [];
+    const poses = await this.model.estimatePoses(videoEl, { flipHorizontal: false });
+    if (!poses.length) return [];
+    return poses[0].keypoints.filter((k) => k.score >= this.minConfidence);
+  }
+}
+
+// Skeleton connections between named keypoints, for drawing.
+const POSE_CONNECTIONS = [
+  ['left_shoulder', 'right_shoulder'], ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],
+  ['right_shoulder', 'right_elbow'], ['right_elbow', 'right_wrist'],
+  ['left_shoulder', 'left_hip'], ['right_shoulder', 'right_hip'], ['left_hip', 'right_hip'],
+  ['left_hip', 'left_knee'], ['left_knee', 'left_ankle'],
+  ['right_hip', 'right_knee'], ['right_knee', 'right_ankle'],
+  ['left_eye', 'right_eye'], ['nose', 'left_eye'], ['nose', 'right_eye'],
+];
+/**
+ * segmentation.js
+ * -----------------------------------------------------------------------
+ * coco-ssd and MobileNet can only name discrete objects — neither has a
+ * concept of "building" or "tree" as such. DeepLab (Cityscapes-trained)
+ * is a real semantic segmentation model: it classifies every pixel into
+ * one of 19 categories, including building, vegetation, sky, and road —
+ * exactly the environmental categories no object detector covers.
+ *
+ * This is heavier than coco-ssd or MoveNet, so — like SceneClassifier —
+ * it runs on its own slow timer (see app.js), not the fast per-frame
+ * loop. Its output here is simplified to "which categories are present
+ * and how much of the frame they cover", not a full pixel overlay —
+ * cheaper to compute and to render than painting a segmentation mask
+ * every cycle.
+ * -----------------------------------------------------------------------
+ */
+
+class SceneSegmenter {
+  constructor({ minAreaFraction = 0.04 } = {}) {
+    this.model = null;
+    this.ready = false;
+    this.minAreaFraction = minAreaFraction; // ignore categories covering <4% of the frame (noise)
+  }
+
+  async load() {
+    if (typeof deeplab === 'undefined') {
+      throw new Error('DeepLab library failed to load (check network connection).');
+    }
+    this.model = await deeplab.load({ base: 'cityscapes', quantizationBytes: 2 });
+    this.ready = true;
+  }
+
+  /**
+   * @param {HTMLVideoElement} videoEl
+   * @returns {Promise<Array<{label:string, fraction:number}>>}
+   */
+  async segment(videoEl) {
+    if (!this.ready || videoEl.readyState < 2) return [];
+    const result = await this.model.segment(videoEl);
+    const counts = {};
+    const map = result.segmentationMap; // Uint8ClampedArray, RGBA per pixel, color-coded by class
+    const total = result.width * result.height;
+
+    // Build a color -> label lookup from the model's own legend once.
+    if (!this._colorToLabel) {
+      this._colorToLabel = {};
+      Object.entries(result.legend).forEach(([label, color]) => {
+        this._colorToLabel[color.join(',')] = label;
+      });
+    }
+
+    for (let i = 0; i < map.length; i += 4) {
+      const key = `${map[i]},${map[i + 1]},${map[i + 2]}`;
+      const label = this._colorToLabel[key];
+      if (!label) continue;
+      counts[label] = (counts[label] || 0) + 1;
+    }
+
+    return Object.entries(counts)
+      .map(([label, count]) => ({ label, fraction: count / total }))
+      .filter((e) => e.fraction >= this.minAreaFraction)
+      .sort((a, b) => b.fraction - a.fraction);
+  }
+}
+/**
+ * ocr.js
+ * -----------------------------------------------------------------------
+ * Real OCR using Tesseract.js against a snapshot of the current camera
+ * frame. Isolated the same way as ObjectDetector — app.js only calls
+ * recognize(videoEl) and never touches Tesseract directly.
+ * -----------------------------------------------------------------------
+ */
+
+class OCRModule {
+  constructor({ lang = 'eng' } = {}) {
+    this.lang = lang;
+    this.worker = null;
+    this.ready = false;
+  }
+
+  async load(onStatus) {
+    if (typeof Tesseract === 'undefined') {
+      throw new Error('Tesseract.js failed to load (check network connection).');
+    }
+    onStatus && onStatus('LOADING');
+    this.worker = await Tesseract.createWorker(this.lang);
+    this.ready = true;
+    onStatus && onStatus('READY');
+  }
+
+  /**
+   * Grabs the current video frame and runs OCR on it.
+   * @param {HTMLVideoElement} videoEl
+   * @returns {Promise<string>}
+   */
+  async recognize(videoEl) {
+    if (!this.ready || !this.worker) throw new Error('OCR engine is not ready yet.');
+    if (!videoEl.videoWidth) throw new Error('No camera frame available to scan.');
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoEl.videoWidth;
+    canvas.height = videoEl.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+    this._preprocessForOcr(ctx, canvas.width, canvas.height);
+
+    const { data } = await this.worker.recognize(canvas);
+    return (data && data.text ? data.text.trim() : '');
+  }
+
+  /**
+   * Grayscale + contrast stretch + binarization, in place on the canvas
+   * context. Tesseract reads clean black-on-white text far more
+   * reliably than a full-color, unevenly-lit camera photo — this is a
+   * standard, well-documented OCR preprocessing step.
+   */
+  _preprocessForOcr(ctx, w, h) {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    // 1) grayscale (luminance-weighted)
+    const gray = new Uint8ClampedArray(w * h);
+    let min = 255, max = 0;
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      gray[p] = g;
+      if (g < min) min = g;
+      if (g > max) max = g;
+    }
+
+    // 2) contrast stretch to use the full 0-255 range, then write back
+    const range = Math.max(1, max - min);
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      const stretched = ((gray[p] - min) / range) * 255;
+      d[i] = d[i + 1] = d[i + 2] = stretched;
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+  }
+}
+/**
+ * aiCore.js
+ * -----------------------------------------------------------------------
+ * Wired to a real generative AI model (Gemini) through a Cloudflare
+ * Worker proxy — the worker holds the API key, this file never sees it.
+ *
+ *   Camera → Object Detection → AI Core (Gemini via proxy) → Explanation
+ *
+ * If the proxy is unreachable (no internet, worker down), falls back to
+ * a small local lookup table so the app still responds instead of
+ * hanging or erroring out.
+ * -----------------------------------------------------------------------
+ */
+
+class AICore {
+  /**
+   * @param {{workerUrl?: string}} config
+   */
+  constructor({ workerUrl } = {}) {
+    this.workerUrl = workerUrl || null;
+    this.connected = !!workerUrl;
+  }
+
+  /**
+   * @param {string} label - the detected object's class name
+   * @param {string} [imageBase64] - current frame, base64, no data: prefix
+   * @returns {Promise<string>}
+   */
+  async explainObject(label, imageBase64) {
+    if (!this.connected) return this._localExplain(label);
+    try {
+      const res = await fetch(this.workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, imageBase64 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        throw new Error(data.detail || data.error || `proxy responded ${res.status}`);
+      }
+      return data.text;
+    } catch (err) {
+      console.error('AI explain request failed, using local fallback:', err);
+      return `${this._localExplain(label)} (AI service error: ${err.message})`;
+    }
+  }
+
+  /**
+   * Free-form question about the current camera frame.
+   * @param {string} imageBase64 - current frame, base64, no data: prefix
+   * @param {string} [question]
+   * @returns {Promise<string>}
+   */
+  async askScene(imageBase64, question) {
+    if (!this.connected) throw new Error('AI service is not configured.');
+    const res = await fetch(this.workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: question || 'Describe what you see in this image in 2-3 short sentences — mention the most notable objects, any visible text, and useful context.',
+        imageBase64,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      throw new Error(data.detail || data.error || `proxy responded ${res.status}`);
+    }
+    return data.text;
+  }
+
+  _localExplain(label) {
+    const key = (label || '').toLowerCase();
+    const table = {
+      person: 'A human being — the model tracks pose position, not identity.',
+      cell_phone: 'A handheld mobile device used for calls, messaging, and apps.',
+      'cell phone': 'A handheld mobile device used for calls, messaging, and apps.',
+      cup: 'A small container typically used for holding drinks.',
+      laptop: 'A portable computer with an attached keyboard and screen.',
+      book: 'A bound set of printed or blank pages.',
+      chair: 'A piece of furniture designed for one person to sit on.',
+      bottle: 'A narrow-necked container used for storing liquids.',
+      keyboard: 'An input device used to type text and commands.',
+      mouse: 'A handheld pointing device used to control a cursor.',
+      tv: 'A screen used to display broadcast or streamed video.',
+      clock: 'A device used to measure and display the current time.',
+      backpack: 'A bag worn on the back for carrying belongings.',
+    };
+    return table[key] || `No local description available for "${label}".`;
+  }
+
+  // ---------------------------------------------------------------------
+  // Voice assistant — interface reserved for a future milestone.
+  // ---------------------------------------------------------------------
+  async listen() {
+    throw new Error('Voice input is not implemented in this prototype yet.');
+  }
+
+  async speak(text) {
+    throw new Error('Voice output is not implemented in this prototype yet.');
+  }
+}
+/**
+ * app.js — IRIS
+ * -----------------------------------------------------------------------
+ * Orchestrates camera / detection / classifier / OCR / AI-core modules
+ * against the full-screen glass UI. Modules are untouched from the
+ * previous build (already debugged) — only the DOM wiring changed.
+ * -----------------------------------------------------------------------
+ */
+
+(function () {
+  'use strict';
+
+  const videoEl = document.getElementById('camera-feed');
+  const canvasEl = document.getElementById('overlay-canvas');
+  const ctx = canvasEl.getContext('2d');
+
+  const cameraMessage = document.getElementById('camera-message');
+  const cameraMessageTitle = document.getElementById('camera-message-title');
+  const cameraMessageBody = document.getElementById('camera-message-body');
+  const cameraRetryBtn = document.getElementById('camera-retry-btn');
+
+  const modeButtons = Array.from(document.querySelectorAll('.mode-btn'));
+  const scanTextBtn = document.getElementById('scan-text-btn');
+  const scanSection = document.getElementById('scan-section');
+  const environmentList = document.getElementById('environment-list');
+
+  const statusRows = {
+    camera: document.querySelector('.status-row[data-key="camera"]'),
+    detection: document.querySelector('.status-row[data-key="detection"]'),
+    ocr: document.querySelector('.status-row[data-key="ocr"]'),
+    aicore: document.querySelector('.status-row[data-key="aicore"]'),
+  };
+  const statusVals = {
+    camera: document.getElementById('status-camera'),
+    detection: document.getElementById('status-detection'),
+    ocr: document.getElementById('status-ocr'),
+    aicore: document.getElementById('status-aicore'),
+  };
+
+  const sceneTagsList = document.getElementById('scene-tags-list');
+  const askAiBtn = document.getElementById('ask-ai-btn');
+  const askAiResponse = document.getElementById('ask-ai-response');
+
+  const resultsList = document.getElementById('results-list');
+  const resultsEmpty = document.getElementById('results-empty');
+  const resultsCount = document.getElementById('results-count');
+  const resultsTitle = document.getElementById('results-title');
+
+  // ---- modules --------------------------------------------------------
+  const camera = new CameraModule(videoEl);
+  const detector = new ObjectDetector({ minConfidence: 0.4 });
+  const classifier = new SceneClassifier({ topK: 3, minConfidence: 0.15 });
+  const pose = new PoseDetector({ minConfidence: 0.35 });
+  const segmenter = new SceneSegmenter({ minAreaFraction: 0.04 });
+  const ocr = new OCRModule({ lang: 'eng' });
+  const aiCore = new AICore({ workerUrl: 'https://ai-vision-proxy.mozafaramirali0.workers.dev/' });
+
+  // ---- state ----------------------------------------------------------
+  let mode = 'vision';
+  let detectionLoopId = null;
+  let classifierTimerId = null;
+  let segmenterTimerId = null;
+  let ocrLoaded = false;
+  let scanning = false;
+  let lastListRenderAt = 0;
+  const LIST_RENDER_INTERVAL_MS = 280;
+
+  // =====================================================================
+  // status strip
+  // =====================================================================
+  function setStatus(key, text, level) {
+    if (statusVals[key]) statusVals[key].textContent = text;
+    const row = statusRows[key];
+    if (!row) return;
+    row.classList.remove('ok', 'warn', 'err', 'idle');
+    if (level) row.classList.add(level);
+  }
+
+  // =====================================================================
+  // camera lifecycle
+  // =====================================================================
+  async function initCamera() {
+    cameraMessage.classList.remove('hidden');
+    cameraMessageTitle.textContent = 'STARTING CAMERA';
+    cameraMessageBody.textContent = 'Requesting camera access…';
+    cameraRetryBtn.hidden = true;
+    setStatus('camera', 'CONNECTING', 'warn');
+
+    try {
+      await camera.start();
+      cameraMessage.classList.add('hidden');
+      setStatus('camera', 'ON', 'ok');
+      resizeCanvas();
+      await initEngines();
+    } catch (err) {
+      handleCameraError(err);
+    }
+  }
+
+  function handleCameraError(err) {
+    setStatus('camera', 'OFF', 'err');
+    setStatus('detection', 'STANDBY', 'idle');
+    setStatus('ocr', 'STANDBY', 'idle');
+    cameraMessage.classList.remove('hidden');
+    cameraRetryBtn.hidden = false;
+
+    const code = err && err.code;
+    if (code === 'PERMISSION_DENIED') {
+      cameraMessageTitle.textContent = 'CAMERA ACCESS DENIED';
+      cameraMessageBody.textContent = 'IRIS needs camera permission to see the environment. Allow camera access in your browser settings, then retry.';
+    } else if (code === 'NO_DEVICE') {
+      cameraMessageTitle.textContent = 'NO CAMERA FOUND';
+      cameraMessageBody.textContent = 'No camera device was detected on this system.';
+    } else if (code === 'IN_USE') {
+      cameraMessageTitle.textContent = 'CAMERA UNAVAILABLE';
+      cameraMessageBody.textContent = 'The camera appears to be in use by another application.';
+    } else if (code === 'UNSUPPORTED') {
+      cameraMessageTitle.textContent = 'UNSUPPORTED BROWSER';
+      cameraMessageBody.textContent = 'This browser does not support camera access. Try a recent Chrome, Safari, or Edge.';
+    } else {
+      cameraMessageTitle.textContent = 'CAMERA ERROR';
+      cameraMessageBody.textContent = (err && err.message) || 'An unknown camera error occurred.';
+    }
+  }
+
+  cameraRetryBtn.addEventListener('click', initCamera);
+  window.addEventListener('resize', resizeCanvas);
+  function resizeCanvas() {
+    canvasEl.width = window.innerWidth;
+    canvasEl.height = window.innerHeight;
+  }
+
+  // =====================================================================
+  // engine init
+  // =====================================================================
+  async function initEngines() {
+    setStatus('detection', 'LOADING', 'warn');
+    setStatus('aicore', 'LOADING', 'warn');
+
+    const detectorReady = detector.load((s) => {
+      if (s === 'WARMING UP') setStatus('detection', 'WARMUP', 'warn');
+      if (s === 'READY') setStatus('detection', mode === 'vision' ? 'ACTIVE' : 'PAUSED', mode === 'vision' ? 'ok' : 'idle');
+    }).then(() => {
+      if (mode === 'vision') startDetectionLoop();
+    }).catch((err) => {
+      setStatus('detection', 'ERROR', 'err');
+      console.error(err);
+    });
+
+    const classifierReady = classifier.load().then(() => {
+      setStatus('aicore', mode === 'vision' ? 'ACTIVE' : 'PAUSED', mode === 'vision' ? 'ok' : 'idle');
+      if (mode === 'vision') startClassifierLoop();
+    }).catch((err) => {
+      setStatus('aicore', 'ERROR', 'err');
+      console.error(err);
+    });
+
+    const poseReady = pose.load().catch((err) => {
+      console.error('pose model failed to load:', err);
+    });
+
+    const segmenterReady = segmenter.load().then(() => {
+      if (mode === 'vision') startSegmenterLoop();
+    }).catch((err) => {
+      environmentList.innerHTML = '<span class="tag-empty">Segmentation unavailable</span>';
+      console.error('segmentation model failed to load:', err);
+    });
+
+    await Promise.all([detectorReady, classifierReady, poseReady, segmenterReady]);
+    setStatus('ocr', 'READY', 'idle');
+  }
+
+  async function ensureOcrLoaded() {
+    if (ocrLoaded) return;
+    setStatus('ocr', 'LOADING', 'warn');
+    await ocr.load(() => {});
+    ocrLoaded = true;
+    setStatus('ocr', 'READY', 'idle');
+  }
+
+  // =====================================================================
+  // detection loop (fast — boxes)
+  // =====================================================================
+  function startDetectionLoop() {
+    if (detectionLoopId) return;
+    setStatus('detection', 'ACTIVE', 'ok');
+    const tick = async () => {
+      if (mode !== 'vision' || !camera.isActive()) {
+        detectionLoopId = null;
+        return;
+      }
+      try {
+        const [preds, keypoints] = await Promise.all([
+          detector.detect(videoEl),
+          pose.ready ? pose.detect(videoEl) : Promise.resolve([]),
+        ]);
+        drawDetections(preds, keypoints);
+        const now = performance.now();
+        if (now - lastListRenderAt >= LIST_RENDER_INTERVAL_MS) {
+          renderResultList(preds);
+          lastListRenderAt = now;
+        }
+        setStatus('detection', `${detector.lastInferenceMs}ms`, 'ok');
+      } catch (err) {
+        console.error('detection error', err);
+      }
+      detectionLoopId = requestAnimationFrame(tick);
+    };
+    detectionLoopId = requestAnimationFrame(tick);
+  }
+
+  function stopDetectionLoop() {
+    if (detectionLoopId) {
+      cancelAnimationFrame(detectionLoopId);
+      detectionLoopId = null;
+    }
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  }
+
+  // =====================================================================
+  // classifier loop (slow — scene tags)
+  // =====================================================================
+  function startClassifierLoop() {
+    if (classifierTimerId) return;
+    const tick = async () => {
+      if (mode !== 'vision' || !camera.isActive()) return;
+      try {
+        renderSceneTags(await classifier.classify(videoEl));
+      } catch (err) {
+        console.error('classifier error', err);
+      }
+    };
+    tick();
+    classifierTimerId = setInterval(tick, 1200);
+  }
+
+  function stopClassifierLoop() {
+    if (classifierTimerId) {
+      clearInterval(classifierTimerId);
+      classifierTimerId = null;
+    }
+  }
+
+  // =====================================================================
+  // segmentation loop (slowest — building / vegetation / sky / road)
+  // =====================================================================
+  function startSegmenterLoop() {
+    if (segmenterTimerId) return;
+    const tick = async () => {
+      if (mode !== 'vision' || !camera.isActive()) return;
+      try {
+        renderEnvironmentTags(await segmenter.segment(videoEl));
+      } catch (err) {
+        console.error('segmentation error', err);
+      }
+    };
+    tick();
+    segmenterTimerId = setInterval(tick, 2200);
+  }
+
+  function stopSegmenterLoop() {
+    if (segmenterTimerId) {
+      clearInterval(segmenterTimerId);
+      segmenterTimerId = null;
+    }
+  }
+
+  function renderEnvironmentTags(entries) {
+    if (mode !== 'vision') return;
+    if (!entries.length) {
+      environmentList.innerHTML = '<span class="tag-empty">No environment features detected</span>';
+      return;
+    }
+    environmentList.innerHTML = entries
+      .map((e) => `<span class="tag-chip">${escapeHtml(e.label)} <em>${Math.round(e.fraction * 100)}%</em></span>`)
+      .join('');
+  }
+
+  function renderSceneTags(tags) {
+    if (mode !== 'vision') return;
+    if (!tags.length) {
+      sceneTagsList.innerHTML = '<span class="tag-empty">No confident match yet</span>';
+      return;
+    }
+    sceneTagsList.innerHTML = tags
+      .map((t) => `<span class="tag-chip">${escapeHtml(t.className.split(',')[0])} <em>${Math.round(t.probability * 100)}%</em></span>`)
+      .join('');
+  }
+
+  // =====================================================================
+  // drawing — 3-color semantic box coding
+  // =====================================================================
+  const LIVING = new Set(['person', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe']);
+  const VEHICLE = new Set(['bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat']);
+  const BOX_COLORS = {
+    living: { stroke: '#4CE7D2', text: '#04141A' },
+    vehicle: { stroke: '#FFB020', text: '#241800' },
+    object: { stroke: '#8C7CFF', text: '#0E0A24' },
+  };
+  function boxColorFor(className) {
+    if (LIVING.has(className)) return BOX_COLORS.living;
+    if (VEHICLE.has(className)) return BOX_COLORS.vehicle;
+    return BOX_COLORS.object;
+  }
+
+  function getCoverTransform() {
+    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+    const cw = canvasEl.width, ch = canvasEl.height;
+    if (!vw || !vh || !cw || !ch) return null;
+    const scale = Math.max(cw / vw, ch / vh);
+    return { scale, offsetX: (cw - vw * scale) / 2, offsetY: (ch - vh * scale) / 2 };
+  }
+
+  function drawDetections(preds, keypoints) {
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    const t = getCoverTransform();
+    if (!t) return;
+
+    ctx.font = '600 13px "JetBrains Mono", monospace';
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 2;
+
+    preds.forEach((p) => {
+      const [x, y, w, h] = p.bbox;
+      const boxX = x * t.scale + t.offsetX;
+      const boxY = y * t.scale + t.offsetY;
+      const boxW = w * t.scale;
+      const boxH = h * t.scale;
+      const color = boxColorFor(p.class);
+
+      ctx.strokeStyle = color.stroke;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      const label = `${p.class} ${Math.round(p.score * 100)}%`;
+      const labelW = ctx.measureText(label).width + 12;
+      const labelY = Math.max(22, boxY);
+      ctx.fillStyle = color.stroke;
+      ctx.fillRect(boxX, labelY - 20, labelW, 20);
+      ctx.fillStyle = color.text;
+      ctx.fillText(label, boxX + 6, labelY - 5);
+    });
+
+    if (keypoints && keypoints.length) drawPose(keypoints, t);
+  }
+
+  function drawPose(keypoints, t) {
+    const byName = {};
+    keypoints.forEach((k) => { byName[k.name] = k; });
+    const toScreen = (k) => ({ x: k.x * t.scale + t.offsetX, y: k.y * t.scale + t.offsetY });
+
+    ctx.strokeStyle = '#4CE7D2';
+    ctx.lineWidth = 2.5;
+    POSE_CONNECTIONS.forEach(([a, b]) => {
+      const ka = byName[a], kb = byName[b];
+      if (!ka || !kb) return;
+      const pa = toScreen(ka), pb = toScreen(kb);
+      ctx.beginPath();
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
+      ctx.stroke();
+    });
+
+    keypoints.forEach((k) => {
+      const p = toScreen(k);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#4CE7D2';
+      ctx.fill();
+    });
+  }
+
+  function captureFrameBase64() {
+    const c = document.createElement('canvas');
+    c.width = videoEl.videoWidth || 1280;
+    c.height = videoEl.videoHeight || 720;
+    c.getContext('2d').drawImage(videoEl, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.7).split(',')[1];
+  }
+
+  function renderResultList(preds) {
+    if (mode !== 'vision') return;
+    resultsCount.textContent = String(preds.length);
+    if (!preds.length) {
+      resultsList.innerHTML = '';
+      resultsList.appendChild(resultsEmpty);
+      return;
+    }
+    resultsList.innerHTML = '';
+    preds.forEach((p) => {
+      const color = boxColorFor(p.class);
+      const item = document.createElement('div');
+      item.className = 'result-item';
+      const pct = Math.round(p.score * 100);
+      item.innerHTML = `
+        <span class="result-swatch" style="background:${color.stroke}"></span>
+        <span class="result-name">${escapeHtml(p.class)}</span>
+        <span class="result-conf">${pct}%</span>
+        <button class="explain-btn">explain</button>
+      `;
+      const explainBtn = item.querySelector('.explain-btn');
+      explainBtn.addEventListener('click', async () => {
+        let textEl = item.nextElementSibling;
+        if (!textEl || !textEl.classList.contains('result-explain-text')) {
+          textEl = document.createElement('div');
+          textEl.className = 'result-explain-text';
+          item.after(textEl);
+        }
+        textEl.textContent = 'Consulting AI core…';
+        try {
+          textEl.textContent = await aiCore.explainObject(p.class, captureFrameBase64());
+        } catch (err) {
+          textEl.textContent = 'AI core is not available right now.';
+        }
+      });
+      resultsList.appendChild(item);
+    });
+  }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // =====================================================================
+  // mode switching
+  // =====================================================================
+  modeButtons.forEach((btn) => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+
+  function setMode(next) {
+    if (mode === next) return;
+    mode = next;
+
+    modeButtons.forEach((b) => {
+      const active = b.dataset.mode === mode;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-selected', String(active));
+    });
+
+    if (mode === 'vision') {
+      resultsTitle.textContent = 'DETECTED OBJECTS';
+      scanSection.style.display = 'none';
+      document.getElementById('scene-tags-section').style.display = '';
+      document.getElementById('environment-section').style.display = '';
+      resultsEmpty.textContent = 'No objects in frame yet — point the camera at something.';
+      resultsList.className = '';
+      if (camera.isActive() && detector.ready) startDetectionLoop();
+      if (camera.isActive() && classifier.ready) startClassifierLoop();
+      if (camera.isActive() && segmenter.ready) startSegmenterLoop();
+      setStatus('ocr', ocrLoaded ? 'READY' : 'STANDBY', 'idle');
+    } else {
+      resultsTitle.textContent = 'OCR OUTPUT';
+      scanSection.style.display = '';
+      document.getElementById('scene-tags-section').style.display = 'none';
+      document.getElementById('environment-section').style.display = 'none';
+      resultsList.innerHTML = '';
+      resultsEmpty.textContent = 'Point the camera at text, then press Scan Text.';
+      resultsList.appendChild(resultsEmpty);
+      resultsCount.textContent = '0';
+      stopDetectionLoop();
+      stopClassifierLoop();
+      stopSegmenterLoop();
+      setStatus('detection', detector.ready ? 'PAUSED' : 'STANDBY', 'idle');
+      setStatus('aicore', classifier.ready ? 'PAUSED' : 'STANDBY', 'idle');
+      ensureOcrLoaded().catch((err) => {
+        setStatus('ocr', 'ERROR', 'err');
+        console.error(err);
+      });
+    }
+  }
+
+  // =====================================================================
+  // OCR scan
+  // =====================================================================
+  scanTextBtn.addEventListener('click', async () => {
+    if (scanning || !camera.isActive()) return;
+    scanning = true;
+    scanTextBtn.classList.add('is-scanning');
+    scanTextBtn.disabled = true;
+    setStatus('ocr', 'SCANNING', 'warn');
+
+    try {
+      await ensureOcrLoaded();
+      const text = await ocr.recognize(videoEl);
+      showOcrResult(text);
+      setStatus('ocr', 'READY', 'idle');
+    } catch (err) {
+      showOcrResult(null, err.message || 'OCR failed.');
+      setStatus('ocr', 'ERROR', 'err');
+    } finally {
+      scanning = false;
+      scanTextBtn.classList.remove('is-scanning');
+      scanTextBtn.disabled = false;
+    }
+  });
+
+  function showOcrResult(text, errorMessage) {
+    resultsList.innerHTML = '';
+    const item = document.createElement('div');
+    item.className = 'ocr-output';
+    if (errorMessage) {
+      item.style.color = 'var(--red)';
+      item.textContent = `SCAN FAILED — ${errorMessage}`;
+    } else if (!text) {
+      item.textContent = 'No text detected. Try moving closer, holding steadier, or improving lighting.';
+    } else {
+      item.textContent = text;
+    }
+    resultsList.appendChild(item);
+    resultsCount.textContent = text ? '1' : '0';
+  }
+
+  // =====================================================================
+  // Ask AI
+  // =====================================================================
+  askAiBtn.addEventListener('click', async () => {
+    if (!camera.isActive()) return;
+    askAiBtn.disabled = true;
+    askAiResponse.classList.remove('is-error');
+    askAiResponse.textContent = 'Asking AI…';
+    try {
+      askAiResponse.textContent = await aiCore.askScene(captureFrameBase64());
+    } catch (err) {
+      askAiResponse.classList.add('is-error');
+      askAiResponse.textContent = `AI request failed — ${err.message}`;
+    } finally {
+      askAiBtn.disabled = false;
+    }
+  });
+
+  // =====================================================================
+  // boot
+  // =====================================================================
+  resizeCanvas();
+  initCamera();
+})();
+  </script>
+</body>
+</html>
