@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>IRIS — هوش مصنوعی پوشیدنی</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cyan: #00f0ff;
+  --amber: #ffb020;
+  --violet: #a78bfa;
+  --red: #ff5a6a;
+  --green: #4ade80;
+  --text: #f0fdfa;
+  --muted: #94a3b8;
+  --glass: rgba(10, 14, 20, 0.72);
+  --glass-solid: #0b0f14;
+  --line: rgba(255,255,255,0.08);
+  --radius: 22px;
+  --font-ui: 'Vazirmatn', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent; margin:0; padding:0;}
+html,body{height:100%; overflow:hidden; background:#000; color:var(--text); font-family:var(--font-ui);}
+
+#camera-feed {position:fixed; inset:0; width:100%; height:100%; object-fit:cover; z-index:1; filter:contrast(1.08) saturate(1.05);}
+#overlay-canvas {position:fixed; inset:0; width:100%; height:100%; z-index:2; pointer-events:none;}
+
+/* ---------- glass panels ---------- */
+.glass {
+  background:var(--glass); backdrop-filter:blur(20px) saturate(1.2); -webkit-backdrop-filter:blur(20px) saturate(1.2);
+  border:1px solid var(--line); border-radius:var(--radius);
+}
+
+/* ---------- top bar ---------- */
+.topbar {
+  position:fixed; top:0; left:0; right:0; z-index:30;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:max(14px, env(safe-area-inset-top)) 16px 10px;
+  background:linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+}
+.logo {display:flex; align-items:center; gap:8px; font-weight:800; letter-spacing:0.04em; font-size:15px;}
+.logo .dot {width:8px; height:8px; border-radius:50%; background:var(--cyan); box-shadow:0 0 10px var(--cyan); animation:pulse 1.5s infinite;}
+.logo .ver {font-family:var(--font-mono); font-size:9px; color:var(--muted); font-weight:400;}
+
+.rec {
+  display:flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10px; color:var(--red);
+}
+.rec::before {content:''; width:8px; height:8px; border-radius:50%; background:var(--red); box-shadow:0 0 8px var(--red); animation:pulse 1.2s infinite;}
+
+@keyframes pulse {0%,100%{opacity:1} 50%{opacity:0.3}}
+
+/* ---------- mode switch ---------- */
+.mode-switch {
+  position:fixed; top:52px; left:50%; transform:translateX(-50%); z-index:30;
+  display:flex; gap:3px; padding:4px;
+  background:var(--glass); backdrop-filter:blur(16px); border:1px solid var(--line); border-radius:30px;
+}
+.mode-btn {
+  background:transparent; border:none; color:var(--muted);
+  font-family:var(--font-ui); font-size:11px; font-weight:600; padding:8px 16px; border-radius:24px; cursor:pointer; transition:.2s; white-space:nowrap;
+}
+.mode-btn.is-active {color:#000; background:var(--cyan);}
+
+/* ---------- status strip ---------- */
+.status-strip {
+  position:fixed; top:100px; right:14px; z-index:30;
+  display:flex; flex-direction:column; gap:6px;
+  padding:10px 14px; border-radius:18px;
+  background:var(--glass); backdrop-filter:blur(16px); border:1px solid var(--line);
+  max-width:160px;
+}
+.status-row {display:flex; align-items:center; gap:7px; font-family:var(--font-mono); font-size:9px; color:var(--muted); white-space:nowrap;}
+.status-row .dot {width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0;}
+.status-row.ok .dot {background:var(--cyan); box-shadow:0 0 6px var(--cyan);}
+.status-row.warn .dot {background:var(--amber);}
+.status-row.err .dot {background:var(--red);}
+.status-row.idle .dot {background:var(--violet);}
+.status-row .val {color:var(--text); margin-right:4px;}
+
+/* ---------- voice orb ---------- */
+.voice-orb {
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:25;
+  width:140px; height:140px; border-radius:50%;
+  background:radial-gradient(circle, rgba(0,240,255,0.15), transparent 70%);
+  display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:0; transition:opacity .4s;
+}
+.voice-orb.active {opacity:1;}
+.voice-orb .ring {
+  position:absolute; width:100%; height:100%; border-radius:50%; border:2px solid var(--cyan);
+  animation:orbPulse 1.8s ease-out infinite;
+}
+.voice-orb .ring:nth-child(2) {animation-delay:.6s;}
+.voice-orb .ring:nth-child(3) {animation-delay:1.2s;}
+.voice-orb svg {width:48px; height:48px; fill:var(--cyan); z-index:2;}
+@keyframes orbPulse {0%{transform:scale(0.6); opacity:0.8;} 100%{transform:scale(1.4); opacity:0;}}
+
+/* ---------- bottom sheet ---------- */
+.sheet {
+  position:fixed; left:0; right:0; bottom:0; z-index:20;
+  max-height:55vh; overflow-y:auto; overflow-x:hidden;
+  background:var(--glass); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border-top:1px solid var(--line); border-radius:28px 28px 0 0;
+  padding:10px 16px max(18px, env(safe-area-inset-bottom));
+  transition:transform .35s cubic-bezier(.4,0,.2,1);
+}
+.sheet.collapsed {transform:translateY(calc(100% - 60px));}
+.sheet-handle {width:40px; height:4px; border-radius:4px; background:var(--line); margin:4px auto 14px; cursor:pointer;}
+
+.sheet-section {margin-bottom:16px;}
+.sheet-section:last-child {margin-bottom:0;}
+.sheet-title {
+  font-size:11px; font-weight:700; letter-spacing:0.08em; color:var(--muted);
+  display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;
+}
+.sheet-count {
+  font-family:var(--font-mono); font-size:9px; color:var(--cyan);
+  border:1px solid var(--line); padding:2px 8px; border-radius:20px;
+}
+
+/* ---------- tags ---------- */
+.tag-row {display:flex; flex-wrap:wrap; gap:6px;}
+.tag-chip {
+  font-family:var(--font-mono); font-size:10px;
+  border:1px solid var(--line); border-radius:20px; padding:5px 12px;
+  background:rgba(140,124,255,0.08); color:var(--text); display:flex; align-items:center; gap:6px;
+}
+.tag-chip em {color:var(--cyan); font-style:normal;}
+.tag-empty {font-family:var(--font-mono); font-size:10.5px; color:var(--muted);}
+
+/* ---------- results list ---------- */
+.result-item {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 4px; border-bottom:1px solid var(--line);
+}
+.result-item:last-child {border-bottom:none;}
+.result-swatch {width:8px; height:8px; border-radius:50%; flex-shrink:0;}
+.result-name {font-size:13px; font-weight:600; flex:1;}
+.result-conf {font-family:var(--font-mono); font-size:10px; color:var(--muted);}
+.explain-btn {
+  font-family:var(--font-mono); font-size:9px; color:var(--violet);
+  border:1px solid rgba(140,124,255,0.35); border-radius:16px; padding:4px 10px; cursor:pointer; background:none; transition:.2s;
+}
+.explain-btn:hover {background:rgba(140,124,255,0.15);}
+.result-explain-text {
+  font-family:var(--font-mono); font-size:11px; color:var(--muted); line-height:1.7;
+  padding:0 0 10px; margin-top:-6px;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  font-family:var(--font-ui); font-size:12px; font-weight:600; letter-spacing:0.02em;
+  border:none; border-radius:30px; padding:12px 24px; cursor:pointer; transition:.2s; display:inline-flex; align-items:center; gap:8px; justify-content:center;
+}
+.btn-primary {background:var(--cyan); color:#000;}
+.btn-primary:active {transform:scale(0.97);}
+.btn-ghost {background:rgba(255,255,255,0.06); color:var(--text); border:1px solid var(--line);}
+.btn-ask {
+  width:100%; background:rgba(140,124,255,0.10); color:var(--violet);
+  border:1px solid rgba(140,124,255,0.35); border-radius:18px; padding:12px; font-size:12px; font-weight:700;
+}
+.btn-ask:disabled {opacity:0.4; cursor:not-allowed;}
+
+/* ---------- OCR output ---------- */
+.ocr-output {
+  font-family:var(--font-mono); font-size:12.5px; line-height:1.8; white-space:pre-wrap;
+  max-height:28vh; overflow-y:auto; direction:ltr; text-align:left;
+}
+
+/* ---------- AI chat ---------- */
+.ai-chat {display:flex; flex-direction:column; gap:10px;}
+.ai-message {
+  padding:12px 14px; border-radius:18px; font-size:13px; line-height:1.7;
+  max-width:92%; word-break:break-word;
+}
+.ai-message.user {align-self:flex-end; background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.2); color:var(--text); border-bottom-right-radius:4px;}
+.ai-message.bot {align-self:flex-start; background:rgba(140,124,255,0.08); border:1px solid rgba(140,124,255,0.2); color:var(--text); border-bottom-left-radius:4px;}
+.ai-message.error {background:rgba(255,90,106,0.08); border:1px solid rgba(255,90,106,0.3); color:var(--red);}
+.ai-message .meta {font-family:var(--font-mono); font-size:9px; color:var(--muted); margin-top:6px; display:block;}
+
+.chat-input-row {display:flex; gap:8px; margin-top:6px;}
+.chat-input {
+  flex:1; background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:20px;
+  padding:10px 16px; color:var(--text); font-family:var(--font-ui); font-size:13px; outline:none;
+}
+.chat-input::placeholder {color:var(--muted);}
+
+/* ---------- camera message ---------- */
+.camera-message {
+  position:fixed; inset:0; z-index:40;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.88); backdrop-filter:blur(8px);
+  transition:opacity .3s;
+}
+.camera-message.hidden {opacity:0; pointer-events:none;}
+.msg-box {text-align:center; max-width:340px; padding:0 24px;}
+.msg-title {font-weight:800; font-size:18px; color:var(--cyan); margin:0 0 12px;}
+.msg-body {font-family:var(--font-mono); font-size:12px; color:var(--muted); margin:0 0 20px; line-height:1.8;}
+
+/* ---------- settings modal ---------- */
+.modal-overlay {
+  position:fixed; inset:0; z-index:50; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px);
+  display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity .3s;
+}
+.modal-overlay.open {opacity:1; pointer-events:auto;}
+.modal {
+  width:min(420px, 92vw); background:var(--glass-solid); border:1px solid var(--line); border-radius:24px;
+  padding:24px; max-height:80vh; overflow-y:auto;
+}
+.modal h2 {font-size:18px; margin-bottom:16px; color:var(--cyan);}
+.modal label {display:block; font-size:12px; color:var(--muted); margin:14px 0 6px;}
+.modal input, .modal select, .modal textarea {
+  width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:14px;
+  padding:10px 14px; color:var(--text); font-family:var(--font-ui); font-size:13px; outline:none;
+}
+.modal textarea {min-height:80px; resize:vertical;}
+.modal .hint {font-family:var(--font-mono); font-size:10px; color:var(--muted); margin-top:4px;}
+.modal-close {position:absolute; top:16px; left:16px; background:none; border:none; color:var(--text); font-size:20px; cursor:pointer;}
+
+/* ---------- voice transcript overlay ---------- */
+.voice-transcript {
+  position:fixed; bottom:calc(55vh + 20px); left:50%; transform:translateX(-50%); z-index:25;
+  background:var(--glass); backdrop-filter:blur(16px); border:1px solid var(--line); border-radius:20px;
+  padding:14px 24px; font-size:14px; color:var(--text); text-align:center; max-width:80vw;
+  opacity:0; transition:opacity .3s; pointer-events:none;
+}
+.voice-transcript.show {opacity:1;}
+
+/* ---------- fab ---------- */
+.fab-voice {
+  position:fixed; left:50%; bottom:calc(55vh + 16px); transform:translateX(-50%); z-index:25;
+  width:64px; height:64px; border-radius:50%; background:var(--cyan); color:#000;
+  border:none; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  box-shadow:0 8px 32px rgba(0,240,255,0.35); transition:.2s;
+}
+.fab-voice:active {transform:translateX(-50%) scale(0.92);}
+.fab-voice svg {width:28px; height:28px; fill:#000;}
+.fab-voice.listening {background:var(--red); box-shadow:0 8px 32px rgba(255,90,106,0.4); animation:pulse 1s infinite;}
+
+/* ---------- memory badge ---------- */
+.memory-badge {
+  position:fixed; top:max(14px, env(safe-area-inset-top)); left:16px; z-index:30;
+  display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius:20px;
+  background:var(--glass); backdrop-filter:blur(12px); border:1px solid var(--line);
+  font-family:var(--font-mono); font-size:10px; color:var(--muted); cursor:pointer; transition:.2s;
+}
+.memory-badge:hover {border-color:var(--cyan); color:var(--cyan);}
+.memory-badge .count {color:var(--cyan); font-weight:700;}
+
+/* ---------- scrollbars ---------- */
+::-webkit-scrollbar {width:4px;}
+::-webkit-scrollbar-thumb {background:rgba(255,255,255,0.15); border-radius:4px;}
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after {animation:none !important; transition:none !important;} }
+</style>
+</head>
+<body>
+
+<video id="camera-feed" playsinline autoplay muted></video>
+<canvas id="overlay-canvas"></canvas>
+
+<!-- Voice Orb -->
+<div class="voice-orb" id="voice-orb">
+  <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+  <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+</div>
+
+<!-- Voice Transcript -->
+<div class="voice-transcript" id="voice-transcript"></div>
+
+<!-- Top Bar -->
+<header class="topbar">
+  <div class="logo"><span class="dot"></span>IRIS<span class="ver">v12</span></div>
+  <div class="rec" id="rec-indicator" hidden>ضبط</div>
+</header>
+
+<!-- Memory Badge -->
+<div class="memory-badge" id="memory-badge" onclick="openSettings()">
+  <span>🧠</span> حافظه: <span class="count" id="memory-count">0</span>
+</div>
+
+<!-- Mode Switch -->
+<div class="mode-switch" role="tablist">
+  <button class="mode-btn is-active" data-mode="vision" role="tab">👁 دید</button>
+  <button class="mode-btn" data-mode="text" role="tab">📝 متن</button>
+  <button class="mode-btn" data-mode="voice" role="tab">🎙 صدا</button>
+  <button class="mode-btn" data-mode="ai" role="tab">🤖 هوش</button>
+</div>
+
+<!-- Status Strip -->
+<div class="status-strip" id="status-strip">
+  <div class="status-row" data-key="camera"><span class="dot"></span>دوربین <span class="val" id="status-camera">خاموش</span></div>
+  <div class="status-row" data-key="detection"><span class="dot"></span>تشخیص <span class="val" id="status-detection">آماده‌باش</span></div>
+  <div class="status-row" data-key="ocr"><span class="dot"></span>OCR <span class="val" id="status-ocr">آماده‌باش</span></div>
+  <div class="status-row" data-key="ai"><span class="dot"></span>هوش <span class="val" id="status-ai">آماده‌باش</span></div>
+  <div class="status-row" data-key="voice"><span class="dot"></span>صدا <span class="val" id="status-voice">آماده‌باش</span></div>
+</div>
+
+<!-- Camera Message -->
+<div class="camera-message" id="camera-message">
+  <div class="msg-box">
+    <p class="msg-title" id="msg-title">در حال راه‌اندازی دوربین</p>
+    <p class="msg-body" id="msg-body">درخواست دسترسی به دوربین…</p>
+    <button class="btn btn-primary" id="retry-btn" hidden>تلاش مجدد</button>
+    <button class="btn btn-ghost" style="margin-top:10px;" onclick="openSettings()" id="settings-btn-msg">⚙ تنظیمات</button>
+  </div>
+</div>
+
+<!-- Bottom Sheet -->
+<div class="sheet" id="sheet">
+  <div class="sheet-handle" onclick="toggleSheet()"></div>
+
+  <!-- VISION MODE -->
+  <div id="panel-vision">
+    <div class="sheet-section">
+      <div class="sheet-title">برچسب‌های صحنه <span class="sheet-count" id="tags-count">۰</span></div>
+      <div class="tag-row" id="scene-tags"><span class="tag-empty">در حال بارگذاری…</span></div>
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-title">اشیای شناسایی‌شده <span class="sheet-count" id="obj-count">۰</span></div>
+      <div id="results-list"><p class="tag-empty">هنوز شیئی در کادر نیست — دوربین را به سمت چیزی بگیرید.</p></div>
+    </div>
+    <div class="sheet-section">
+      <button class="btn-ask" id="ask-scene-btn">🤖 از هوش مصنوعی درباره این صحنه بپرس</button>
+      <div id="scene-ai-response" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- TEXT MODE -->
+  <div id="panel-text" style="display:none;">
+    <div class="sheet-section">
+      <div class="sheet-title">اسکن متن</div>
+      <button class="btn-ask" id="scan-btn"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);margin-left:6px;"></span>اسکن متن از دوربین</button>
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-title">نتیجه OCR</div>
+      <div class="ocr-output" id="ocr-result" dir="ltr">هنوز متنی اسکن نشده.</div>
+    </div>
+    <div class="sheet-section" id="ocr-actions" style="display:none;">
+      <div class="sheet-title">عملیات</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" style="font-size:11px;padding:8px 14px;" onclick="translateOcr()">🌐 ترجمه</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:8px 14px;" onclick="summarizeOcr()">📋 خلاصه</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:8px 14px;" onclick="speakText(document.getElementById('ocr-result').textContent)">🔊 بخوان</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VOICE MODE -->
+  <div id="panel-voice" style="display:none;">
+    <div class="sheet-section" style="text-align:center;padding:20px 0;">
+      <p style="color:var(--muted);font-size:13px;line-height:2;">
+        دکمه میکروفون پایین صفحه را نگه دارید و صحبت کنید.<br>
+        مثال: «این چیه؟» — «متن رو بخون» — «ترجمه کن»
+      </p>
+      <div id="voice-log" style="margin-top:16px;text-align:right;max-height:30vh;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- AI MODE -->
+  <div id="panel-ai" style="display:none;">
+    <div class="sheet-section">
+      <div class="sheet-title">گفتگو با IRIS</div>
+      <div class="ai-chat" id="ai-chat">
+        <div class="ai-message bot">سلام! من IRIS هستم. از من درباره هر چیزی که می‌بینی بپرس. می‌توانم اشیا را تشخیص دهم، متن بخوانم، و به سوالاتت پاسخ دهم.</div>
+      </div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="ai-chat-input" placeholder="پیام خود را بنویس…" onkeydown="if(event.key==='Enter')sendChat()">
+        <button class="btn btn-primary" onclick="sendChat()">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Voice FAB -->
+<button class="fab-voice" id="fab-voice" ontouchstart="startVoice(event)" onmousedown="startVoice(event)" ontouchend="stopVoice()" onmouseup="stopVoice()">
+  <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+</button>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal" style="position:relative;">
+    <button class="modal-close" onclick="closeSettings()">×</button>
+    <h2>⚙ تنظیمات IRIS</h2>
+
+    <label>کلید API (OpenRouter)</label>
+    <input type="password" id="api-key" placeholder="sk-or-v1-...">
+    <p class="hint">از <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--cyan);">openrouter.ai/keys</a> رایگان دریافت کنید.</p>
+
+    <label>مدل هوش مصنوعی</label>
+    <select id="ai-model">
+      <option value="google/gemma-3-4b-it:free">Gemma 3 4B (رایگان · سریع)</option>
+      <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2 3B (رایگان)</option>
+      <option value="qwen/qwen-2.5-7b-instruct:free">Qwen 2.5 7B (رایگان · فارسی‌تر)</option>
+      <option value="google/gemini-flash-1.5-8b-exp">Gemini Flash 1.5 8B (ارزان)</option>
+    </select>
+
+    <label>زبان صدا (TTS)</label>
+    <select id="tts-lang">
+      <option value="fa-IR">فارسی</option>
+      <option value="en-US">English</option>
+    </select>
+
+    <label>زبان تشخیص صدا (STT)</label>
+    <select id="stt-lang">
+      <option value="fa-IR">فارسی</option>
+      <option value="en-US">English</option>
+    </select>
+
+    <label>حداقل اعتماد تشخیص (%)</label>
+    <input type="number" id="conf-threshold" value="40" min="10" max="90">
+
+    <label>حافظه IRIS (Context)</label>
+    <textarea id="memory-context" placeholder="اطلاعات پایه درباره کاربر…"></textarea>
+    <p class="hint">این متن در هر درخواست AI ارسال می‌شود تا IRIS شخصی‌تر پاسخ دهد.</p>
+
+    <button class="btn btn-primary" style="width:100%;margin-top:16px;" onclick="saveSettings()">💾 ذخیره تنظیمات</button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="clearMemory()">🗑 پاک کردن حافظه</button>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+
+<script>
+/* ================================================================
+   IRIS v12 — AI Vision Assistant
+   Architecture: Camera → Perception → Context Engine → AI Core → Voice
+   ================================================================ */
+
+(function() {
+  'use strict';
+
+  // ---- DOM refs ----
+  const video = document.getElementById('camera-feed');
+  const canvas = document.getElementById('overlay-canvas');
+  const ctx = canvas.getContext('2d');
+  const sheet = document.getElementById('sheet');
+  const modeBtns = document.querySelectorAll('.mode-btn');
+  const statusVals = {
+    camera: document.getElementById('status-camera'),
+    detection: document.getElementById('status-detection'),
+    ocr: document.getElementById('status-ocr'),
+    ai: document.getElementById('status-ai'),
+    voice: document.getElementById('status-voice'),
+  };
+  const statusRows = {
+    camera: document.querySelector('[data-key="camera"]'),
+    detection: document.querySelector('[data-key="detection"]'),
+    ocr: document.querySelector('[data-key="ocr"]'),
+    ai: document.querySelector('[data-key="ai"]'),
+    voice: document.querySelector('[data-key="voice"]'),
+  };
+
+  // ---- Settings ----
+  const SETTINGS = {
+    apiKey: localStorage.getItem('iris_api_key') || '',
+    model: localStorage.getItem('iris_model') || 'google/gemma-3-4b-it:free',
+    ttsLang: localStorage.getItem('iris_tts') || 'fa-IR',
+    sttLang: localStorage.getItem('iris_stt') || 'fa-IR',
+    confThreshold: parseInt(localStorage.getItem('iris_conf') || '40', 10) / 100,
+    memory: localStorage.getItem('iris_memory') || '',
+  };
+
+  // ---- State ----
+  let mode = 'vision';
+  let stream = null;
+  let detector = null, classifier = null, ocrWorker = null;
+  let detectorReady = false, classifierReady = false, ocrReady = false;
+  let detectionLoop = null, classifierTimer = null;
+  let lastPreds = [];
+  let frameCount = 0;
+  let isScanning = false;
+  let chatHistory = [];
+  let recognition = null;
+  let isListening = false;
+  let sceneContext = {objects: [], lastSceneDesc: '', timestamp: 0};
+
+  // ---- Camera ----
+  async function startCamera() {
+    setStatus('camera', 'در حال اتصال…', 'warn');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 720}},
+        audio: false
+      });
+      video.srcObject = stream;
+      await new Promise((res, rej) => {
+        video.onloadedmetadata = () => { video.play().catch(()=>{}); res(); };
+        setTimeout(() => rej(new Error('timeout')), 8000);
+      });
+      document.getElementById('camera-message').classList.add('hidden');
+      setStatus('camera', 'روشن', 'ok');
+      resizeCanvas();
+      await loadEngines();
+    } catch(e) {
+      setStatus('camera', 'خطا', 'err');
+      showCameraError(e.name, e.message);
+    }
+  }
+
+  function showCameraError(name, msg) {
+    const title = document.getElementById('msg-title');
+    const body = document.getElementById('msg-body');
+    const retry = document.getElementById('retry-btn');
+    title.textContent = 'خطای دوربین';
+    if (name === 'NotAllowedError') body.textContent = 'دسترسی به دوربین رد شد. در تنظیمات مرورگر اجازه دهید.';
+    else if (name === 'NotFoundError') body.textContent = 'دوربینی یافت نشد.';
+    else body.textContent = msg || 'خطای ناشناخته دوربین.';
+    retry.hidden = false;
+    retry.onclick = () => { retry.hidden = true; startCamera(); };
+  }
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  // ---- Engines ----
+  async function loadEngines() {
+    setStatus('detection', 'بارگذاری…', 'warn');
+    setStatus('ai', 'بارگذاری…', 'warn');
+
+    // Detector
+    try {
+      await tf.setBackend('webgl').catch(() => {});
+      await tf.ready();
+      detector = await cocoSsd.load({base: 'lite_mobilenet_v2'});
+      detectorReady = true;
+      setStatus('detection', 'فعال', 'ok');
+      if (mode === 'vision') startDetectionLoop();
+    } catch(e) {
+      console.error(e);
+      setStatus('detection', 'خطا', 'err');
+    }
+
+    // Classifier
+    try {
+      classifier = await mobilenet.load({version: 2, alpha: 0.5});
+      classifierReady = true;
+      setStatus('ai', 'فعال', 'ok');
+      if (mode === 'vision') startClassifierLoop();
+    } catch(e) {
+      console.error(e);
+      setStatus('ai', 'خطا', 'err');
+    }
+
+    // OCR lazy
+    setStatus('ocr', 'آماده', 'idle');
+
+    // Voice
+    initVoice();
+  }
+
+  async function ensureOCR() {
+    if (ocrReady) return;
+    setStatus('ocr', 'بارگذاری…', 'warn');
+    try {
+      ocrWorker = await Tesseract.createWorker('eng');
+      ocrReady = true;
+      setStatus('ocr', 'آماده', 'idle');
+    } catch(e) {
+      setStatus('ocr', 'خطا', 'err');
+      throw e;
+    }
+  }
+
+  // ---- Detection Loop ----
+  function startDetectionLoop() {
+    if (detectionLoop || !detectorReady) return;
+    setStatus('detection', 'فعال', 'ok');
+    const tick = async () => {
+      if (mode !== 'vision' || !stream?.active) { detectionLoop = null; return; }
+      try {
+        const preds = await detector.detect(video);
+        lastPreds = preds.filter(p => p.score >= SETTINGS.confThreshold).sort((a,b) => b.score - a.score);
+        drawBoxes(lastPreds);
+        if (frameCount % 8 === 0) renderResultList(lastPreds);
+        frameCount++;
+      } catch(e) { console.error(e); }
+      detectionLoop = requestAnimationFrame(tick);
+    };
+    detectionLoop = requestAnimationFrame(tick);
+  }
+  function stopDetectionLoop() {
+    if (detectionLoop) { cancelAnimationFrame(detectionLoop); detectionLoop = null; }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // ---- Classifier Loop ----
+  function startClassifierLoop() {
+    if (classifierTimer || !classifierReady) return;
+    const tick = async () => {
+      if (mode !== 'vision' || !stream?.active) return;
+      try {
+        const tags = await classifier.classify(video, 3);
+        renderSceneTags(tags);
+      } catch(e) { console.error(e); }
+    };
+    tick();
+    classifierTimer = setInterval(tick, 1500);
+  }
+  function stopClassifierLoop() {
+    if (classifierTimer) { clearInterval(classifierTimer); classifierTimer = null; }
+  }
+
+  // ---- Drawing ----
+  const LIVING = new Set(['person','bird','cat','dog','horse','sheep','cow','elephant','bear','zebra','giraffe']);
+  const VEHICLE = new Set(['bicycle','car','motorcycle','airplane','bus','train','truck','boat']);
+  function colorFor(cls) {
+    if (LIVING.has(cls)) return {stroke:'#00f0ff', bg:'rgba(0,240,255,0.18)'};
+    if (VEHICLE.has(cls)) return {stroke:'#ffb020', bg:'rgba(255,176,32,0.18)'};
+    return {stroke:'#a78bfa', bg:'rgba(167,139,250,0.15)'};
+  }
+  function getTransform() {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const cw = canvas.width, ch = canvas.height;
+    if (!vw || !vh) return null;
+    const s = Math.max(cw/vw, ch/vh);
+    return {s, ox: (cw - vw*s)/2, oy: (ch - vh*s)/2};
+  }
+  function drawBoxes(preds) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const t = getTransform(); if (!t) return;
+    ctx.font = '600 12px "JetBrains Mono", monospace';
+    ctx.textBaseline = 'bottom';
+    preds.forEach(p => {
+      const [x,y,w,h] = p.bbox;
+      const bx = x*t.s + t.ox, by = y*t.s + t.oy, bw = w*t.s, bh = h*t.s;
+      const c = colorFor(p.class);
+      ctx.strokeStyle = c.stroke; ctx.lineWidth = 2.5;
+      ctx.strokeRect(bx, by, bw, bh);
+      const label = `${p.class} ${Math.round(p.score*100)}%`;
+      const lw = ctx.measureText(label).width + 14;
+      const ly = Math.max(22, by);
+      ctx.fillStyle = c.stroke;
+      ctx.fillRect(bx, ly-20, lw, 20);
+      ctx.fillStyle = '#000';
+      ctx.fillText(label, bx+7, ly-5);
+    });
+  }
+
+  // ---- Render Lists ----
+  function renderSceneTags(tags) {
+    const el = document.getElementById('scene-tags');
+    const count = document.getElementById('tags-count');
+    if (!tags.length) { el.innerHTML = '<span class="tag-empty">هنوز تگ قاطعی نیست</span>'; count.textContent = '۰'; return; }
+    el.innerHTML = tags.map(t => `<span class="tag-chip">${escapeHtml(t.className.split(',')[0])} <em>${Math.round(t.probability*100)}%</em></span>`).join('');
+    count.textContent = String(tags.length);
+  }
+  function renderResultList(preds) {
+    const el = document.getElementById('results-list');
+    const count = document.getElementById('obj-count');
+    count.textContent = String(preds.length);
+    if (!preds.length) { el.innerHTML = '<p class="tag-empty">هنوز شیئی در کادر نیست.</p>'; return; }
+    el.innerHTML = '';
+    preds.forEach(p => {
+      const c = colorFor(p.class);
+      const div = document.createElement('div');
+      div.className = 'result-item';
+      div.innerHTML = `
+        <span class="result-swatch" style="background:${c.stroke}"></span>
+        <span class="result-name">${escapeHtml(p.class)}</span>
+        <span class="result-conf">${Math.round(p.score*100)}%</span>
+        <button class="explain-btn">توضیح</button>`;
+      div.querySelector('.explain-btn').onclick = () => explainObject(p.class, div);
+      el.appendChild(div);
+    });
+    // Update context
+    sceneContext.objects = preds.map(p => p.class);
+    sceneContext.timestamp = Date.now();
+  }
+
+  // ---- AI Core ----
+  async function callAI(messages) {
+    if (!SETTINGS.apiKey) throw new Error('کلید API تنظیم نشده. ⚙ را بزنید.');
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SETTINGS.apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': location.href,
+        'X-Title': 'IRIS Vision'
+      },
+      body: JSON.stringify({
+        model: SETTINGS.model,
+        messages: [
+          {role: 'system', content: `You are IRIS, a wearable AI vision assistant. You help the user understand their surroundings. Be concise (1-2 sentences). Current context: objects seen recently: ${sceneContext.objects.join(', ') || 'none'}. User memory: ${SETTINGS.memory || 'none'}. Respond in the same language as the user.`},
+          ...messages
+        ],
+        max_tokens: 256,
+        temperature: 0.6
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error?.message || `HTTP ${res.status}`);
+    return data.choices[0].message.content;
+  }
+
+  async function explainObject(label, itemEl) {
+    let txt = itemEl.nextElementSibling;
+    if (!txt || !txt.classList.contains('result-explain-text')) {
+      txt = document.createElement('div'); txt.className = 'result-explain-text'; itemEl.after(txt);
+    }
+    txt.textContent = 'در حال فکر کردن…';
+    setStatus('ai', 'پردازش…', 'warn');
+    try {
+      const ans = await callAI([{role: 'user', content: `What is a "${label}"? Briefly explain in 1 sentence.`}]);
+      txt.textContent = ans;
+      speakText(ans);
+      addToMemory(`شیء شناسایی شد: ${label} — ${ans}`);
+    } catch(e) {
+      txt.textContent = 'هوش مصنوعی در دسترس نیست: ' + e.message;
+    }
+    setStatus('ai', 'فعال', 'ok');
+  }
+
+  document.getElementById('ask-scene-btn').onclick = async () => {
+    const btn = document.getElementById('ask-scene-btn');
+    const resp = document.getElementById('scene-ai-response');
+    btn.disabled = true; resp.innerHTML = '<p class="tag-empty">در حال تحلیل صحنه…</p>';
+    setStatus('ai', 'پردازش…', 'warn');
+    try {
+      const b64 = captureFrameBase64();
+      const ans = await callAI([
+        {role: 'user', content: 'Describe what you see in this scene in 2 short sentences. Mention the most notable objects.'}
+      ]);
+      resp.innerHTML = `<div class="ai-message bot" style="margin:0;">${escapeHtml(ans)}<span class="meta">IRIS · ${new Date().toLocaleTimeString('fa-IR')}</span></div>`;
+      sceneContext.lastSceneDesc = ans;
+      speakText(ans);
+      addToMemory(`توصیف صحنه: ${ans}`);
+    } catch(e) {
+      resp.innerHTML = `<div class="ai-message error" style="margin:0;">${escapeHtml(e.message)}</div>`;
+    }
+    btn.disabled = false;
+    setStatus('ai', 'فعال', 'ok');
+  };
+
+  // ---- OCR ----
+  document.getElementById('scan-btn').onclick = async () => {
+    if (isScanning) return;
+    isScanning = true;
+    const btn = document.getElementById('scan-btn');
+    btn.disabled = true; btn.innerHTML = '⏳ در حال اسکن…';
+    setStatus('ocr', 'اسکن…', 'warn');
+    try {
+      await ensureOCR();
+      const c = document.createElement('canvas');
+      c.width = video.videoWidth || 1280; c.height = video.videoHeight || 720;
+      c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+      const {data} = await ocrWorker.recognize(c);
+      const text = (data?.text || '').trim();
+      const out = document.getElementById('ocr-result');
+      if (!text) out.textContent = 'متنی یافت نشد. نور را بهتر کنید یا نزدیک‌تر بگیرید.';
+      else { out.textContent = text; document.getElementById('ocr-actions').style.display = ''; addToMemory(`OCR: ${text.substring(0,100)}`); }
+    } catch(e) {
+      document.getElementById('ocr-result').textContent = 'خطا در OCR: ' + e.message;
+    }
+    isScanning = false;
+    btn.disabled = false;
+    btn.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);margin-left:6px;"></span>اسکن متن از دوربین';
+    setStatus('ocr', 'آماده', 'idle');
+  };
+
+  async function translateOcr() {
+    const text = document.getElementById('ocr-result').textContent;
+    if (!text || text.startsWith('هنوز') || text.startsWith('متنی')) return;
+    setStatus('ai', 'ترجمه…', 'warn');
+    try {
+      const ans = await callAI([{role: 'user', content: `Translate this to Persian (Farsi):\n\n${text}`}]);
+      document.getElementById('ocr-result').textContent = ans;
+      speakText(ans);
+    } catch(e) { alert(e.message); }
+    setStatus('ai', 'فعال', 'ok');
+  }
+  async function summarizeOcr() {
+    const text = document.getElementById('ocr-result').textContent;
+    if (!text || text.startsWith('هنوز')) return;
+    setStatus('ai', 'خلاصه…', 'warn');
+    try {
+      const ans = await callAI([{role: 'user', content: `Summarize this in one sentence in Persian:\n\n${text}`}]);
+      document.getElementById('ocr-result').textContent = ans;
+      speakText(ans);
+    } catch(e) { alert(e.message); }
+    setStatus('ai', 'فعال', 'ok');
+  }
+
+  // ---- Voice ----
+  function initVoice() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      setStatus('voice', 'پشتیبانی نمی‌شود', 'err');
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = SETTINGS.sttLang;
+
+    recognition.onstart = () => {
+      isListening = true;
+      document.getElementById('voice-orb').classList.add('active');
+      document.getElementById('fab-voice').classList.add('listening');
+      document.getElementById('rec-indicator').hidden = false;
+      setStatus('voice', 'گوش دادن…', 'ok');
+    };
+    recognition.onend = () => {
+      isListening = false;
+      document.getElementById('voice-orb').classList.remove('active');
+      document.getElementById('fab-voice').classList.remove('listening');
+      document.getElementById('rec-indicator').hidden = true;
+      setStatus('voice', 'آماده', 'idle');
+    };
+    recognition.onresult = (e) => {
+      let transcript = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        transcript += e.results[i][0].transcript;
+      }
+      document.getElementById('voice-transcript').textContent = transcript;
+      document.getElementById('voice-transcript').classList.add('show');
+      if (e.results[e.results.length-1].isFinal) {
+        handleVoiceCommand(transcript.trim());
+        setTimeout(() => document.getElementById('voice-transcript').classList.remove('show'), 2000);
+      }
+    };
+    recognition.onerror = (e) => {
+      console.error(e);
+      setStatus('voice', 'خطا', 'err');
+    };
+    setStatus('voice', 'آماده', 'idle');
+  }
+
+  window.startVoice = function(e) {
+    e.preventDefault();
+    if (!recognition) { alert('مرورگر شما Speech Recognition را پشتیبانی نمی‌کند.'); return; }
+    if (!isListening) { recognition.lang = SETTINGS.sttLang; recognition.start(); }
+  };
+  window.stopVoice = function() {
+    if (recognition && isListening) recognition.stop();
+  };
+
+  async function handleVoiceCommand(cmd) {
+    const log = document.getElementById('voice-log');
+    const entry = document.createElement('div');
+    entry.style.cssText = 'padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;';
+    entry.innerHTML = `<span style="color:var(--cyan);">شما:</span> ${escapeHtml(cmd)}`;
+    log.prepend(entry);
+
+    const lower = cmd.toLowerCase();
+    // Simple command router
+    if (lower.includes('چیه') || lower.includes('چیست') || lower.includes('این چی')) {
+      if (lastPreds.length) {
+        const obj = lastPreds[0].class;
+        entry.innerHTML += `<br><span style="color:var(--violet);">IRIS:</span> در حال بررسی ${obj}…`;
+        try {
+          const ans = await callAI([{role: 'user', content: `What is a "${obj}"? Explain briefly in Persian.`}]);
+          entry.innerHTML += `<br><span style="color:var(--violet);">IRIS:</span> ${escapeHtml(ans)}`;
+          speakText(ans);
+        } catch(e) { entry.innerHTML += `<br><span style="color:var(--red);">خطا:</span> ${escapeHtml(e.message)}`; }
+      } else {
+        entry.innerHTML += `<br><span style="color:var(--violet);">IRIS:</span> هنوز شیئی نمی‌بینم. دوربین را به سمت چیزی بگیرید.`;
+        speakText('هنوز شیئی نمی‌بینم. لطفاً دوربین را به سمت چیزی بگیرید.');
+      }
+    }
+    else if (lower.includes('بخوان') || lower.includes('متن') || lower.includes('اسکن')) {
+      document.getElementById('scan-btn').click();
+      entry.innerHTML += `<br><span style="color:var(--violet);">IRIS:</span> در حال اسکن متن…`;
+    }
+    else if (lower.includes('ترجمه')) {
+      translateOcr();
+      entry.innerHTML += `<br><span style="color:var(--violet);">IRIS:</span> در حال ترجمه…`;
+    }
+    else {
+      // General query
+      entry.innerHTML += `<br><span style="color:var(--violet);">IRIS:</span> در حال فکر کردن…`;
+      try {
+        const ans = await callAI([{role: 'user', content: cmd}]);
+        entry.innerHTML += `<br><span style="color:var(--violet);">IRIS:</span> ${escapeHtml(ans)}`;
+        speakText(ans);
+      } catch(e) { entry.innerHTML += `<br><span style="color:var(--red);">خطا:</span> ${escapeHtml(e.message)}`; }
+    }
+  }
+
+  function speakText(text) {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = SETTINGS.ttsLang;
+    u.rate = 1.1;
+    u.pitch = 1;
+    window.speechSynthesis.speak(u);
+  }
+
+  // ---- AI Chat ----
+  window.sendChat = async function() {
+    const input = document.getElementById('ai-chat-input');
+    const text = input.value.trim(); if (!text) return;
+    input.value = '';
+    const chat = document.getElementById('ai-chat');
+    chat.innerHTML += `<div class="ai-message user">${escapeHtml(text)}</div>`;
+    chat.scrollTop = chat.scrollHeight;
+    setStatus('ai', 'پردازش…', 'warn');
+    try {
+      const ans = await callAI([{role: 'user', content: text}]);
+      chat.innerHTML += `<div class="ai-message bot">${escapeHtml(ans)}<span class="meta">IRIS · ${new Date().toLocaleTimeString('fa-IR')}</span></div>`;
+      speakText(ans);
+      addToMemory(`چت: ${text} → ${ans}`);
+    } catch(e) {
+      chat.innerHTML += `<div class="ai-message error">خطا: ${escapeHtml(e.message)}</div>`;
+    }
+    chat.scrollTop = chat.scrollHeight;
+    setStatus('ai', 'فعال', 'ok');
+  };
+
+  // ---- Mode Switching ----
+  modeBtns.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+  function setMode(m) {
+    if (mode === m) return;
+    mode = m;
+    modeBtns.forEach(b => b.classList.toggle('is-active', b.dataset.mode === m));
+
+    document.getElementById('panel-vision').style.display = m === 'vision' ? '' : 'none';
+    document.getElementById('panel-text').style.display = m === 'text' ? '' : 'none';
+    document.getElementById('panel-voice').style.display = m === 'voice' ? '' : 'none';
+    document.getElementById('panel-ai').style.display = m === 'ai' ? '' : 'none';
+
+    if (m === 'vision') {
+      startDetectionLoop(); startClassifierLoop();
+      setStatus('detection', detectorReady ? 'فعال' : 'آماده‌باش', detectorReady ? 'ok' : 'idle');
+    } else {
+      stopDetectionLoop(); stopClassifierLoop();
+      setStatus('detection', 'مکث', 'idle');
+    }
+  }
+
+  // ---- Memory / Context ----
+  function addToMemory(entry) {
+    const mem = JSON.parse(localStorage.getItem('iris_log') || '[]');
+    mem.push({t: Date.now(), entry});
+    if (mem.length > 100) mem.shift();
+    localStorage.setItem('iris_log', JSON.stringify(mem));
+    updateMemoryBadge();
+  }
+  function updateMemoryBadge() {
+    const mem = JSON.parse(localStorage.getItem('iris_log') || '[]');
+    document.getElementById('memory-count').textContent = String(mem.length);
+  }
+
+  // ---- Settings ----
+  window.openSettings = function() {
+    document.getElementById('api-key').value = SETTINGS.apiKey;
+    document.getElementById('ai-model').value = SETTINGS.model;
+    document.getElementById('tts-lang').value = SETTINGS.ttsLang;
+    document.getElementById('stt-lang').value = SETTINGS.sttLang;
+    document.getElementById('conf-threshold').value = Math.round(SETTINGS.confThreshold * 100);
+    document.getElementById('memory-context').value = SETTINGS.memory;
+    document.getElementById('settings-modal').classList.add('open');
+  };
+  window.closeSettings = function() {
+    document.getElementById('settings-modal').classList.remove('open');
+  };
+  window.saveSettings = function() {
+    SETTINGS.apiKey = document.getElementById('api-key').value.trim();
+    SETTINGS.model = document.getElementById('ai-model').value;
+    SETTINGS.ttsLang = document.getElementById('tts-lang').value;
+    SETTINGS.sttLang = document.getElementById('stt-lang').value;
+    SETTINGS.confThreshold = parseInt(document.getElementById('conf-threshold').value, 10) / 100;
+    SETTINGS.memory = document.getElementById('memory-context').value;
+    localStorage.setItem('iris_api_key', SETTINGS.apiKey);
+    localStorage.setItem('iris_model', SETTINGS.model);
+    localStorage.setItem('iris_tts', SETTINGS.ttsLang);
+    localStorage.setItem('iris_stt', SETTINGS.sttLang);
+    localStorage.setItem('iris_conf', String(Math.round(SETTINGS.confThreshold * 100)));
+    localStorage.setItem('iris_memory', SETTINGS.memory);
+    if (recognition) recognition.lang = SETTINGS.sttLang;
+    closeSettings();
+  };
+  window.clearMemory = function() {
+    localStorage.removeItem('iris_log');
+    updateMemoryBadge();
+    alert('حافظه پاک شد.');
+  };
+
+  // ---- Utils ----
+  function setStatus(key, text, level) {
+    if (statusVals[key]) statusVals[key].textContent = text;
+    const row = statusRows[key]; if (!row) return;
+    row.classList.remove('ok','warn','err','idle');
+    if (level) row.classList.add(level);
+  }
+  function escapeHtml(s) {
+    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+  }
+  function captureFrameBase64() {
+    const c = document.createElement('canvas');
+    c.width = video.videoWidth || 1280; c.height = video.videoHeight || 720;
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.65).split(',')[1];
+  }
+  window.toggleSheet = function() {
+    sheet.classList.toggle('collapsed');
+  };
+
+  // ---- Boot ----
+  resizeCanvas();
+  updateMemoryBadge();
+  startCamera();
+})();
+</script>
+</body>
+</html>
